@@ -1,6 +1,6 @@
 (() => {
   const ROOT_ID = "drawing-bridge-root";
-  const STYLE_ID = "drawing-bridge-style-v12";
+  const STYLE_ID = "drawing-bridge-style-v14";
   const SECTION_STORAGE_KEY = "tekstura:drawing-bridge:sections";
 
   const VIEW_W = 1100;
@@ -563,7 +563,7 @@
 
   function applyAutoCalc() {
     refreshState();
-    if (variant().mode === "empty") return;
+    if (!isDetailedMode() || variant().mode === "empty") return;
     const tread = treadValues();
     const n1 = intField("flight1_steps_count", 0);
     const n2 = intField("flight2_steps_count", 0);
@@ -625,9 +625,13 @@
 
   function visibleParams() {
     const v = variant();
-    const tread = !isDetailedMode() || projectState?.treadMode?.sameTread !== false ? ["b"] : ["b1", "b2"];
-    const includeH = isDetailedMode(); // H — справочный размер. В простом режиме скрыт и нигде не обязателен.
-    const withOptionalH = (items) => includeH ? [...items, "H"] : items;
+    if (!isDetailedMode()) {
+      if (v.key === "empty_straight") return ["L", "W"];
+      if (v.mode === "empty" || v.key !== "ready_straight") return ["M1", "B1", "M2", "B2", "ZL", "ZW"];
+      return ["M1", "B1"];
+    }
+    const tread = projectState?.treadMode?.sameTread !== false ? ["b"] : ["b1", "b2"];
+    const withOptionalH = (items) => [...items, "H"];
     if (v.key === "empty_straight") return withOptionalH(["L", "W"]);
     if (v.mode === "empty") return withOptionalH(["M1", "B1", "M2", "B2", "ZL", "ZW"]);
     if (v.key === "ready_straight") return withOptionalH(["M1", "B1", "N1", "h", ...(projectState?.treadMode?.sameTread !== false ? ["b"] : ["b1"])]);
@@ -670,7 +674,7 @@
     const v = variant();
     const isEmptyOpening = v.mode === "empty" || String(projectState.type || "").startsWith("empty_");
     const isActiveField = projectState.activeParam === code || (projectState.activeZone === "flight1" && ["M1", "B1", "N1"].includes(code)) || (projectState.activeZone === "flight2" && ["M2", "B2", "N2"].includes(code)) || (projectState.activeZone === "turn" && ["ZL", "ZW", "ZN"].includes(code));
-    const autoKey = !isEmptyOpening && v.mode === "ready" && meta.auto ? meta.auto : "";
+    const autoKey = isDetailedMode() && !isEmptyOpening && v.mode === "ready" && meta.auto ? meta.auto : "";
     const auto = autoKey ? Boolean(projectState.autoCalc[autoKey]) : false;
     const readonly = autoKey && auto ? "readonly" : "";
     return `<div class="db-field ${isActiveField ? "is-active" : ""}" data-field-wrap="${code}">
@@ -688,7 +692,7 @@
       const active = projectState.activeParam === code ? "is-active" : "";
       const vMini = variant();
       const emptyMini = vMini.mode === "empty" || String(projectState.type || "").startsWith("empty_");
-      const readonly = !emptyMini && vMini.mode === "ready" && meta.auto && projectState.autoCalc[meta.auto] ? "readonly" : "";
+      const readonly = isDetailedMode() && !emptyMini && vMini.mode === "ready" && meta.auto && projectState.autoCalc[meta.auto] ? "readonly" : "";
       return `<label class="db-mini-input ${active}" title="${escapeHtml(meta.label)}">
         <span>${escapeHtml(code)}</span>
         <input data-field="${meta.name}" data-param-code="${code}" ${numericInputAttrs()} value="${escapeHtml(readDraftField(meta.name))}" ${readonly}/>
@@ -705,9 +709,11 @@
       ? `<label class="db-check"><input type="checkbox" data-tread-same ${projectState.treadMode.sameTread !== false ? "checked" : ""}/> Одинаковая проступь для всех маршей</label>`
       : "";
     const simpleNote = isDetailedMode() ? "" : `<div class="db-muted">Простой режим: показаны только основные размеры, схема и комментарий. Детальные данные не удаляются и появятся при переключении в детальный режим.</div>`;
-    const calcNote = (mode === "empty" || String(projectState.type || "").startsWith("empty_"))
-      ? `<div class="db-muted">Пустой проём: M1/M2 — это геометрия проёма/зоны, без авторасчёта ступеней.</div>`
-      : `<div class="db-muted">M1/M2 считаются от каркасной проступи: M1 = N1 × b, M2 = N2 × b. Вылеты готовых деталей считаются отдельно и не меняют длину каркаса.</div>`;
+    const calcNote = !isDetailedMode()
+      ? `<div class="db-muted">В простом режиме M1/M2 вводятся вручную как основные габариты. Авторасчёт M=N×b, проступи и подступёнки скрыты до детального режима.</div>`
+      : (mode === "empty" || String(projectState.type || "").startsWith("empty_"))
+        ? `<div class="db-muted">Пустой проём: M1/M2 — это геометрия проёма/зоны, без авторасчёта ступеней.</div>`
+        : `<div class="db-muted">M1/M2 считаются от каркасной проступи: M1 = N1 × b, M2 = N2 × b. Вылеты готовых деталей считаются отдельно и не меняют длину каркаса.</div>`;
     return `
       <div class="db-grid">
         <div class="db-field">
@@ -1042,13 +1048,17 @@
     let title = "";
     let outer = { x: 0, y: 0, w: m1, h: b1 };
 
+    const visibleDimensionIds = new Set(visibleParams());
     const addDim = (id, label, value, unit, side, start, end, offset = 56) => {
+      if (!visibleDimensionIds.has(id)) return;
       dimensions.push({ id, label, value, unit, side, start, end, offset });
     };
     const addTreadsVertical = (rect, count) => {
+      if (!isDetailedMode()) return;
       for (let i = 1; i < count; i += 1) lines.push({ start: { x: rect.x, y: rect.y + rect.h * i / count }, end: { x: rect.x + rect.w, y: rect.y + rect.h * i / count }, kind: "tread" });
     };
     const addTreadsHorizontal = (rect, count) => {
+      if (!isDetailedMode()) return;
       for (let i = 1; i < count; i += 1) lines.push({ start: { x: rect.x + rect.w * i / count, y: rect.y }, end: { x: rect.x + rect.w * i / count, y: rect.y + rect.h }, kind: "tread" });
     };
     const setFlightDirection = (id, start, end) => {
@@ -2142,9 +2152,6 @@
       `
       : `
         ${section("frame", "Основные размеры", frameSection())}
-        ${variant().mode === "empty" ? section("ascent", "Направление подъёма", ascentSection()) : ""}
-        ${variant().mode === "empty" ? section("upperBalustrade", "Верхняя балюстрада", upperBalustradeSection()) : ""}
-        ${variant().mode === "empty" ? section("siteMarks", "Стены / продолжение / препятствия", siteMarksSection()) : ""}
         ${section("comments", "Комментарий", commentsSection())}
       `;
     root.innerHTML = `<div class="db-shell db-mode-${variant().mode} db-measurement-${measurementMode()}">

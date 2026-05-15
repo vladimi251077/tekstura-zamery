@@ -308,23 +308,24 @@ function renderIssues(issues) {
 function renderDimensions(measurement, project) {
   const p = project.params || {};
   const treadMode = project.treadMode || {};
+  const detailed = productionMeasurementMode(project) === "detailed";
   const b1 = treadMode.sameTread === false ? treadMode.b1 : (p.b || p.treadDepth || p.b1 || treadMode.b1 || measurement.tread_depth_mm);
   const b2 = treadMode.sameTread === false ? treadMode.b2 : (p.b || p.treadDepth || p.b2 || treadMode.b2 || measurement.tread_depth_mm);
   const rows = [
-    dimKv("Высота H", pickNumber(p.H, measurement.height_clean_to_clean_mm)),
+    detailed ? dimKv("Высота H", pickNumber(p.H, measurement.height_clean_to_clean_mm)) : "",
     dimKv("L — длина проёма", pickNumber(p.L, measurement.opening_length_mm)),
     dimKv("W — ширина проёма", pickNumber(p.W, measurement.opening_width_mm)),
     dimKv("Марш 1 M1", pickNumber(p.M1, measurement.flight1_length_mm)),
     dimKv("Марш 1 B1", pickNumber(p.B1, measurement.flight1_width_mm)),
-    countKv("Ступени N1", pickNumber(p.N1, measurement.flight1_steps_count)),
-    dimKv("Проступь b1", b1),
+    detailed ? countKv("Ступени N1", pickNumber(p.N1, measurement.flight1_steps_count)) : "",
+    detailed ? dimKv("Проступь b1", b1) : "",
     dimKv("Марш 2 M2", pickNumber(p.M2, measurement.flight2_length_mm)),
     dimKv("Марш 2 B2", pickNumber(p.B2, measurement.flight2_width_mm)),
-    countKv("Ступени N2", pickNumber(p.N2, measurement.flight2_steps_count)),
-    dimKv("Проступь b2", b2),
+    detailed ? countKv("Ступени N2", pickNumber(p.N2, measurement.flight2_steps_count)) : "",
+    detailed ? dimKv("Проступь b2", b2) : "",
     dimKv("Поворот ZL", pickNumber(p.ZL, measurement.corner_zone_length_mm)),
     dimKv("Поворот ZW", pickNumber(p.ZW, measurement.corner_zone_width_mm)),
-    countKv("Забежные ZN", pickNumber(p.ZN, measurement.winder_steps_count)),
+    detailed ? countKv("Забежные ZN", pickNumber(p.ZN, measurement.winder_steps_count)) : "",
   ].filter(Boolean);
   return rows.length ? `<div class="production-grid">${rows.join("")}</div>` : `<p class="production-empty-line">Рабочие размеры не заполнены.</p>`;
 }
@@ -423,6 +424,7 @@ function renderCard() {
   empty.classList.add("hidden");
   const svg = m.drawing_svg || "";
   const issues = collectIssues(m, project, finish, svg);
+  const detailed = productionMeasurementMode(project) === "detailed";
   card.innerHTML = `
     <header class="production-card-head">
       <div>
@@ -443,8 +445,8 @@ function renderCard() {
     ${section("Итоговая схема", svg ? `<div class="production-svg">${svg}</div>` : `<p class="production-empty-line">Схема не сохранена.</p>`)}
     ${section("Требует уточнения", renderIssues(issues))}
     ${section("Размеры каркаса", renderDimensions(m, project))}
-    ${section("Условия объекта", renderMarks(project))}
-    ${section("Чистовые детали", renderFinish(finish))}
+    ${detailed ? section("Условия объекта", renderMarks(project)) : ""}
+    ${detailed ? section("Чистовые детали", renderFinish(finish)) : ""}
     ${section("Фото объекта", renderPhotos())}
     ${section("Комментарии", `<div class="production-note">${escapeHtml(m.general_comment || m.obstacles_comment || "Комментариев нет.")}</div>`)}
   `;

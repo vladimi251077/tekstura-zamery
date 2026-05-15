@@ -1,0 +1,114 @@
+.production-page { background:#f3f6fb; }
+.production-shell { padding: 18px; }
+.production-layout { display:grid; grid-template-columns: 320px minmax(0,1fr); gap:18px; align-items:start; }
+.production-list { position: sticky; top: 14px; max-height: calc(100vh - 120px); overflow:auto; }
+.production-list-head { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:12px; }
+.production-search { width:100%; height:42px; border:1px solid var(--line); border-radius:12px; padding:0 12px; margin-bottom:12px; }
+.production-order-btn { width:100%; text-align:left; border:1px solid var(--line); border-radius:14px; padding:12px; background:#fff; margin-bottom:10px; cursor:pointer; }
+.production-order-btn:hover,.production-order-btn.active { border-color:#071a49; box-shadow:0 8px 20px rgba(15,23,42,.08); }
+.production-order-btn b { display:block; color:#071a49; margin-bottom:4px; }
+.production-order-btn span { display:block; color:#64748b; font-size:12px; line-height:1.35; }
+.production-order-card { display:grid; gap:16px; }
+.production-card-head { display:flex; justify-content:space-between; gap:16px; align-items:flex-start; padding:18px; border-radius:22px; background:#071a49; color:#fff; }
+.production-card-head h2 { margin:0 0 6px; font-size:28px; }
+.production-card-head p { margin:2px 0; color:#dbeafe; }
+.production-actions { display:flex; flex-wrap:wrap; gap:8px; justify-content:flex-end; }
+.production-actions .btn { background:#fff; color:#071a49; border-color:#fff; }
+.production-section { background:#fff; border:1px solid var(--line); border-radius:22px; padding:18px; box-shadow:0 10px 24px rgba(15,23,42,.05); }
+.production-section h3 { margin:0 0 12px; color:#071a49; font-size:20px; }
+.production-grid { display:grid; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); gap:10px; }
+.production-kv { border:1px solid #e2e8f0; border-radius:14px; padding:10px 12px; background:#f8fafc; }
+.production-kv span { display:block; color:#64748b; font-size:12px; margin-bottom:3px; }
+.production-kv b { display:block; color:#0f172a; font-size:17px; }
+.production-svg { overflow:auto; background:#fff; border:1px solid #e2e8f0; border-radius:18px; padding:10px; }
+.production-svg svg { max-width:100%; height:auto; display:block; margin:auto; }
+.production-table-wrap { overflow:auto; border:1px solid #e2e8f0; border-radius:16px; }
+.production-table { width:100%; border-collapse:collapse; min-width:720px; }
+.production-table th,.production-table td { padding:10px; border-bottom:1px solid #e2e8f0; text-align:left; vertical-align:top; }
+.production-table th { background:#f8fafc; color:#475569; font-size:12px; text-transform:uppercase; letter-spacing:.03em; }
+.production-table tr:last-child td { border-bottom:0; }
+.production-photo-grid { display:grid; grid-template-columns: repeat(auto-fill,minmax(160px,1fr)); gap:12px; }
+.production-photo { border:1px solid #e2e8f0; border-radius:16px; overflow:hidden; background:#f8fafc; }
+.production-photo img { width:100%; aspect-ratio:4/3; object-fit:cover; display:block; background:#e5e7eb; }
+.production-photo div { padding:10px; font-size:13px; color:#334155; }
+.production-warning { border-left:5px solid #f59e0b; background:#fffbeb; padding:10px 12px; border-radius:14px; color:#92400e; margin-top:8px; }
+.production-empty-line { color:#64748b; font-style:italic; }
+.production-note { white-space:pre-wrap; line-height:1.45; }
+.production-badges { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
+.production-badge { display:inline-flex; border-radius:999px; padding:5px 9px; background:#e0f2fe; color:#075985; font-size:12px; font-weight:700; }
+@media (max-width: 900px) { .production-layout { grid-template-columns:1fr; } .production-list { position:static; max-height:none; } .production-card-head { display:grid; } .production-actions { justify-content:flex-start; } }
+@media print {
+  .no-print,.topbar { display:none!important; }
+  body { background:#fff!important; }
+  .production-shell { padding:0; }
+  .production-layout { display:block; }
+  .production-order-card { gap:10px; }
+  .production-section,.production-card-head { box-shadow:none!important; break-inside:avoid; }
+  .production-card-head { color:#000; background:#fff; border:1px solid #000; }
+  .production-card-head p { color:#000; }
+  .production-table th { color:#000; }
+}
+
+/* v9: production view must render saved measurement SVG without relying on drawing-bridge.js injected styles */
+.production-svg .db-svg { width: 100%; max-width: 100%; height: auto; background: #fff; }
+.production-svg .db-svg .outline { fill:#fff; stroke:#0f172a; stroke-width:2.2; vector-effect:non-scaling-stroke; }
+.production-svg .db-svg .zone { fill:#f8fafc; stroke:#0f172a; stroke-width:2; vector-effect:non-scaling-stroke; }
+.production-svg .db-svg .zone.turn { fill:#eef6ff; }
+.production-svg .db-svg .winder-step { fill:#eef6ff; stroke:#1e293b; stroke-width:1.4; vector-effect:non-scaling-stroke; }
+.production-svg .db-svg .winder-envelope { fill:#e0f2fe; stroke:#0f172a; stroke-width:2; vector-effect:non-scaling-stroke; }
+.production-svg .db-svg .step-line { stroke:#1e293b; stroke-width:1.4; vector-effect:non-scaling-stroke; }
+.production-svg .db-svg .route { fill:none; stroke:#0f172a; stroke-width:2.8; marker-end:url(#db-arrow); vector-effect:non-scaling-stroke; }
+.production-svg .db-svg .dimension line,
+.production-svg .db-svg .dimension path { stroke:#0f172a; stroke-width:1.8; vector-effect:non-scaling-stroke; }
+.production-svg .db-svg .dimension text { font:800 15px system-ui, sans-serif; fill:#0f172a; paint-order:stroke; stroke:#fff; stroke-width:4px; stroke-linejoin:round; }
+.production-svg .db-svg .wall-line { stroke:#94a3b8; stroke-width:12; stroke-linecap:round; vector-effect:non-scaling-stroke; }
+.production-svg .db-svg .wall-label { font:900 12px system-ui, sans-serif; fill:#4b5563; paint-order:stroke; stroke:#fff; stroke-width:4px; }
+.production-svg .db-svg .ascent-line { fill:none; stroke:#0f172a; stroke-width:4.5; stroke-linecap:round; marker-end:url(#db-arrow); vector-effect:non-scaling-stroke; }
+.production-svg .db-svg .ascent-text { font:950 13px system-ui,sans-serif; fill:#0f172a; paint-order:stroke; stroke:#fff; stroke-width:4px; }
+.production-svg .db-svg .balustrade-line { fill:none; stroke:#2563eb; stroke-width:6; stroke-dasharray:14 8; stroke-linecap:round; vector-effect:non-scaling-stroke; }
+.production-svg .db-svg .balustrade-text { font:900 12px system-ui,sans-serif; fill:#1d4ed8; paint-order:stroke; stroke:#fff; stroke-width:4px; }
+.production-svg .db-svg .edge-extension { fill:none; stroke:#475569; stroke-width:3; stroke-dasharray:10 8; vector-effect:non-scaling-stroke; }
+.production-svg .db-svg .edge-extension-dim { font:900 11px system-ui,sans-serif; fill:#334155; paint-order:stroke; stroke:#fff; stroke-width:4px; }
+.production-svg .db-svg .obstacle-mark { fill:#fff7ed; stroke:#ea580c; stroke-width:3; vector-effect:non-scaling-stroke; }
+.production-svg .db-svg .obstacle-text { font:900 11px system-ui,sans-serif; fill:#9a3412; paint-order:stroke; stroke:#fff; stroke-width:4px; }
+.production-svg .db-svg .window-mark { fill:#e0f2fe; stroke:#0284c7; stroke-width:3; vector-effect:non-scaling-stroke; }
+.production-svg .db-svg .window-text { font:900 13px system-ui, sans-serif; fill:#0369a1; paint-order:stroke; stroke:#fff; stroke-width:4px; }
+.production-svg .db-svg .step-no { font:800 11px system-ui, sans-serif; fill:#475569; paint-order:stroke; stroke:#fff; stroke-width:3px; text-anchor:middle; }
+.production-svg .db-svg .caption { font:900 16px system-ui, sans-serif; fill:#0f172a; paint-order:stroke; stroke:#fff; stroke-width:4px; }
+.production-svg .db-svg .dim-hit,
+.production-svg .db-svg .wall-hit,
+.production-svg .db-svg .window-hit,
+.production-svg .db-svg .zone-hit,
+.production-svg .db-svg .ascent-hit { display:none; }
+
+
+/* v10: production warnings and clearer saved SVG layers */
+.production-issue{border:1px solid #f59e0b;border-left:6px solid #f59e0b;background:#fffbeb;color:#78350f;border-radius:16px;padding:12px 14px;line-height:1.45}
+.production-issue ul{margin:8px 0 0 18px;padding:0}
+.production-ok{border:1px solid #86efac;border-left:6px solid #22c55e;background:#f0fdf4;color:#14532d;border-radius:16px;padding:12px 14px;font-weight:800}
+.production-svg .db-svg .ascent-line{stroke:#2563eb!important;stroke-width:3!important;stroke-dasharray:10 6!important;opacity:.92;marker-end:url(#db-ascent-arrow)!important}
+.production-svg .db-svg .ascent-text{fill:#1d4ed8!important;font:950 11px system-ui,sans-serif!important;stroke:#fff!important;stroke-width:5px!important}
+.production-svg .db-svg .dimension text{font-size:15px!important}
+@media (max-width: 520px){.production-shell{padding:10px}.production-section{padding:12px;border-radius:16px}.production-card-head h2{font-size:22px}.production-svg{padding:6px}.production-table{min-width:620px}.production-kv b{font-size:15px}}
+
+/* v11: production workflow controls */
+.production-status-control{margin-top:12px;padding:12px;border:1px solid rgba(255,255,255,.28);border-radius:16px;background:rgba(255,255,255,.10);max-width:460px}
+.production-status-control label{margin:0 0 6px;color:#dbeafe;font-size:12px;text-transform:uppercase;letter-spacing:.04em;font-weight:900}
+.production-status-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center}
+.production-status-row select{min-height:42px;border-radius:12px;border:1px solid rgba(255,255,255,.45);background:#fff;color:#0f172a;padding:0 10px;font-weight:800}
+.production-status-control small{display:block;margin-top:7px;color:#bfdbfe;line-height:1.35}
+.production-status-control .btn{min-height:42px}
+@media (max-width: 640px){
+  .production-status-row{grid-template-columns:1fr}
+  .production-status-control{max-width:100%}
+}
+@media print{.production-status-control{display:none!important}}
+
+
+/* v12: stricter SVG readability in production */
+.production-svg .db-svg .ascent-layer{opacity:.92}
+.production-svg .db-svg .dimension{isolation:isolate}
+@media (max-width: 520px){
+  .production-svg .db-svg .dimension text{font-size:16px!important}
+  .production-svg .db-svg .ascent-text{font-size:10px!important}
+}

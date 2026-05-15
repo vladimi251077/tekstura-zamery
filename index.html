@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tekstura Замеры</title>
+    <meta name="robots" content="noindex,nofollow" />
+    <meta name="theme-color" content="#071a49" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="./icon-192.png" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <link rel="stylesheet" href="./styles.css?v=20260515-production-v12" />
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <div>
+          <div class="eyebrow">Закрытая система</div>
+          <h1>Tekstura Замеры</h1>
+        </div>
+        <div class="top-actions">
+          <span id="user-role" class="badge muted">Не вошли</span>
+          <button id="logout-btn" class="btn ghost hidden">Выйти</button>
+        </div>
+      </header>
+
+      <main>
+        <section id="setup-warning" class="card warning hidden">
+          <h2>Нужно настроить Supabase</h2>
+          <p>Откройте <code>zamer/app.js</code> и вставьте <code>SUPABASE_URL</code> и <code>SUPABASE_ANON_KEY</code> из Supabase → Project Settings → API.</p>
+        </section>
+
+        <section id="auth-view" class="auth-layout">
+          <div class="card auth-card">
+            <h2>Вход сотрудника</h2>
+            <p class="muted-text">Доступ только для замерщиков, конструктора, менеджера и администратора.</p>
+            <label>Email</label>
+            <input id="email" type="email" placeholder="admin@tekstura.ru" autocomplete="email" />
+            <label>Пароль</label>
+            <input id="password" type="password" placeholder="••••••••" autocomplete="current-password" />
+            <button id="login-btn" class="btn primary full">Войти</button>
+            <button id="signup-btn" class="btn secondary full hidden" aria-hidden="true" tabindex="-1">Создать пользователя в Supabase</button>
+            <p class="muted-text small">Доступ выдаёт администратор. Для работы используйте выданный логин и пароль.</p>
+            <p id="auth-message" class="form-message"></p>
+          </div>
+        </section>
+
+        <section id="main-view" class="hidden">
+          <div class="grid stats-grid">
+            <div class="card stat"><b id="stat-drafts">0</b><span>Черновики</span></div>
+            <div class="card stat"><b id="stat-review">0</b><span>На проверке</span></div>
+            <div class="card stat"><b id="stat-ready">0</b><span>Готовые</span></div>
+            <div class="card stat"><b id="stat-archive">0</b><span>Архив</span></div>
+          </div>
+
+          <div class="toolbar">
+            <button id="new-measurement-btn" class="btn primary">+ Новый замер</button>
+            <button id="refresh-btn" class="btn secondary">Обновить</button>
+            <a class="btn secondary" href="./production.html">Производство</a>
+            <select id="status-filter">
+              <option value="active">Рабочие</option>
+              <option value="all">Все</option>
+              <option value="Черновик">Черновик</option>
+              <option value="На проверке">На проверке</option>
+              <option value="Готовый замер">Готовый замер</option>
+              <option value="Архив">Архив</option>
+            </select>
+          </div>
+
+          <div class="layout">
+            <aside class="card list-panel">
+              <h2>Замеры</h2>
+              <div id="measurements-list" class="measurements-list"></div>
+            </aside>
+
+            <section class="card detail-panel">
+              <div id="empty-detail" class="empty-state">
+                <h2>Выберите замер</h2>
+                <p>Или создайте новый замер для пустого проёма, каркаса или бетонной лестницы.</p>
+              </div>
+
+              <form id="measurement-form" class="hidden">
+                <div class="form-head">
+                  <div>
+                    <div class="eyebrow">Карточка замера</div>
+                    <h2 id="form-title">Новый замер</h2>
+                  </div>
+                  <div class="form-head-side">
+                    <span id="form-status" class="badge">Черновик</span>
+                    <div id="measurement-mode-box" class="measurement-mode-box">
+                      <div class="mode-title">Режим замера: <b id="measurement-mode-current">Простой</b></div>
+                      <div class="mode-segment">
+                        <button type="button" data-measurement-mode="simple" class="mode-segment-btn active">Простой</button>
+                        <button type="button" data-measurement-mode="detailed" class="mode-segment-btn">Детальный</button>
+                      </div>
+                      <div id="measurement-mode-note" class="mode-note">Детальные данные сохранены, но скрыты в простом режиме.</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="tabs">
+                  <button type="button" class="tab active" data-tab="general">Общее</button>
+                  <button type="button" class="tab" data-tab="sizes">Размеры</button>
+                  <button type="button" class="tab" data-tab="photos">Фото</button>
+                  <button type="button" class="tab" data-tab="check">Проверка</button>
+                  <button type="button" class="tab" data-tab="archive">Архив</button>
+                </div>
+
+                <div class="tab-panel" data-panel="general">
+                  <div class="grid two">
+                    <div>
+                      <label>Клиент</label>
+                      <input name="client_name" placeholder="Алексей" />
+                    </div>
+                    <div>
+                      <label>Телефон</label>
+                      <input name="client_phone" placeholder="+7..." />
+                    </div>
+                  </div>
+                  <label>Адрес</label>
+                  <textarea name="address" placeholder="Казань, улица..."></textarea>
+
+                  <div class="grid three">
+                    <div>
+                      <label>Что есть на объекте</label>
+                      <select name="site_situation">
+                        <option>Пустой проём</option>
+                        <option>Готовый металлокаркас</option>
+                        <option>Бетонная лестница</option>
+                        <option>Старая лестница / демонтаж</option>
+                        <option>Нестандартная ситуация</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label>Тип проёма</label>
+                      <select name="opening_type">
+                        <option>Прямой</option>
+                        <option>Г-образный левый</option>
+                        <option>Г-образный правый</option>
+                        <option>П-образный</option>
+                        <option>Сложный / нестандартный</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label>Статус</label>
+                      <select name="status">
+                        <option>Черновик</option>
+                        <option>На проверке</option>
+                        <option>Нужны уточнения</option>
+                        <option>Готовый замер</option>
+                        <option>Передан в расчёт</option>
+                        <option>Смета готова</option>
+                        <option>Заказ принят</option>
+                        <option>Архив</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div class="grid three">
+                    <div>
+                      <label>Стадия объекта</label>
+                      <select name="object_stage">
+                        <option>Черновая</option>
+                        <option>Предчистовая</option>
+                        <option>Чистовая</option>
+                        <option>Ремонт</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label>Направление подъёма</label>
+                      <input name="stair_direction" placeholder="Снизу вверх, поворот налево" />
+                    </div>
+                    <div>
+                      <label>Тип поворота</label>
+                      <select name="turn_type">
+                        <option value="">Не выбрано</option>
+                        <option>Площадка</option>
+                        <option>Забежные</option>
+                        <option>Не решено</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <label>Комментарий замерщика</label>
+                  <textarea name="general_comment" placeholder="Особенности объекта, пожелания клиента, риски..."></textarea>
+                </div>
+
+                <div class="tab-panel hidden" data-panel="sizes">
+                  <div class="grid four">
+                    <div><label>Высота чистый-чистый, мм</label><input name="height_clean_to_clean_mm" type="number" /></div>
+                    <div><label>Толщина перекрытия, мм</label><input name="slab_thickness_mm" type="number" /></div>
+                    <div><label>Высота потолка, мм</label><input name="ceiling_height_1_mm" type="number" /></div>
+                    <div><label>Желаемая ширина марша, мм</label><input name="desired_flight_width_mm" type="number" /></div>
+                  </div>
+                  <div class="grid four">
+                    <div><label>Длина проёма, мм</label><input name="opening_length_mm" type="number" /></div>
+                    <div><label>Ширина проёма, мм</label><input name="opening_width_mm" type="number" /></div>
+                    <div><label>1 марш длина, мм</label><input name="flight1_length_mm" type="number" /></div>
+                    <div><label>1 марш ширина, мм</label><input name="flight1_width_mm" type="number" /></div>
+                  </div>
+                  <div class="grid four">
+                    <div><label>2 марш длина, мм</label><input name="flight2_length_mm" type="number" /></div>
+                    <div><label>2 марш ширина, мм</label><input name="flight2_width_mm" type="number" /></div>
+                    <div><label>Угол длина, мм</label><input name="corner_zone_length_mm" type="number" /></div>
+                    <div><label>Угол ширина, мм</label><input name="corner_zone_width_mm" type="number" /></div>
+                  </div>
+                  <div class="grid three">
+                    <div><label>Материал стен</label><input name="wall_material" placeholder="Газоблок" /></div>
+                    <div><label>Материал перекрытия</label><input name="slab_material" placeholder="Монолит" /></div>
+                    <div><label>Тёплый пол</label><select name="has_warm_floor"><option>Не знаю</option><option>Да</option><option>Нет</option></select></div>
+                  </div>
+                  <div class="grid three checkbox-row">
+                    <label><input name="has_pipes" type="checkbox" /> Есть трубы</label>
+                    <label><input name="has_electricity" type="checkbox" /> Есть электрика</label>
+                    <label><input name="has_ventilation" type="checkbox" /> Есть вентиляция</label>
+                  </div>
+                  <label>Ограничения и препятствия</label>
+                  <textarea name="obstacles_comment" placeholder="Трубы, двери, окна, где нельзя сверлить..."></textarea>
+                </div>
+
+                <div class="tab-panel hidden" data-panel="photos">
+                  <div class="photo-upload">
+                    <div>
+                      <label>Тип фото</label>
+                      <select id="photo-type">
+                        <option>Ручной эскиз замера</option>
+                        <option>Бумажный лист с размерами</option>
+                        <option>Общий вид снизу</option>
+                        <option>Проём снизу</option>
+                        <option>Проём сверху</option>
+                        <option>Место старта</option>
+                        <option>Место выхода</option>
+                        <option>Левая сторона</option>
+                        <option>Правая сторона</option>
+                        <option>Коммуникации</option>
+                        <option>Ограждения / балюстрада</option>
+                        <option>Ступени / марши</option>
+                        <option>Дополнительные размеры</option>
+                        <option>Другое</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label>Фото</label>
+                      <input id="photo-file" type="file" accept="image/*" capture="environment" />
+                    </div>
+                    <button id="upload-photo-btn" type="button" class="btn secondary">Загрузить фото</button>
+                  </div>
+                  <div id="photos-list" class="photos-list"></div>
+                </div>
+
+                <div class="tab-panel hidden" data-panel="check">
+                  <div id="check-list" class="check-list"></div>
+                </div>
+
+                <div class="tab-panel hidden" data-panel="archive">
+                  <div class="archive-actions">
+                    <button id="download-json-btn" type="button" class="btn secondary">Скачать JSON</button>
+                    <button id="download-csv-btn" type="button" class="btn secondary">Скачать CSV</button>
+                    <button id="archive-btn" type="button" class="btn warning-btn">Перевести в архив</button>
+                    <button id="soft-delete-btn" type="button" class="btn danger">Мягко удалить</button>
+                  </div>
+                  <p class="muted-text">ZIP с PDF и фото будет добавлен во второй итерации. В этой версии уже можно скачать данные замера JSON/CSV и перевести карточку в архив.</p>
+                </div>
+
+                <div class="form-actions">
+                  <button type="submit" class="btn primary">Сохранить</button>
+                  <button id="send-review-btn" type="button" class="btn secondary">Отправить на проверку</button>
+                  <button id="accept-btn" type="button" class="btn secondary">Принять замер</button>
+                  <a class="btn secondary" href="./production.html" target="_blank" rel="noopener">Задания производству</a>
+                </div>
+                <p id="form-message" class="form-message"></p>
+              </form>
+            </section>
+          </div>
+        </section>
+      </main>
+    </div>
+    <script src="./app.js?v=20260515-production-v12"></script>
+    <script src="./photo-preview.js?v=20260515-production-v12"></script>
+    <script src="./details-enhance.js?v=20260515-production-v12"></script>
+    <script src="./scheme-sketch.js?v=20260506-disabled"></script>
+    <script src="./drawing-bridge.js?v=20260515-production-v12"></script>
+  </body>
+</html>

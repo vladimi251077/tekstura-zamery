@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tekstura Производство</title>
+    <meta name="robots" content="noindex,nofollow" />
+    <meta name="theme-color" content="#071a49" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="./icon-192.png" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <link rel="stylesheet" href="./styles.css?v=20260515-production-v12" />
+    <link rel="stylesheet" href="./production.css?v=20260515-production-v12" />
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  </head>
+  <body class="production-page">
+    <header class="topbar production-topbar no-print">
+      <div>
+        <div class="eyebrow">Tekstura</div>
+        <h1>Задания производству</h1>
+      </div>
+      <div class="top-actions">
+        <a class="btn ghost" href="./index.html">← Замеры</a>
+        <span id="production-user" class="badge muted">Не вошли</span>
+        <button id="production-logout" class="btn ghost hidden">Выйти</button>
+      </div>
+    </header>
+
+    <main class="production-shell">
+      <section id="production-auth" class="auth-layout">
+        <div class="card auth-card">
+          <h2>Вход для производства</h2>
+          <p class="muted-text">Откройте готовые замеры без лишних кнопок замерщика.</p>
+          <label>Email</label>
+          <input id="prod-email" type="email" autocomplete="email" placeholder="production@tekstura.ru" />
+          <label>Пароль</label>
+          <input id="prod-password" type="password" autocomplete="current-password" placeholder="••••••••" />
+          <button id="prod-login" class="btn primary full">Войти</button>
+          <p id="prod-auth-message" class="form-message"></p>
+        </div>
+      </section>
+
+      <section id="production-app" class="production-layout hidden">
+        <aside class="card production-list no-print">
+          <div class="production-list-head">
+            <h2>Готовые замеры</h2>
+            <button id="prod-refresh" class="btn secondary">Обновить</button>
+          </div>
+          <input id="prod-search" class="production-search" placeholder="Поиск: номер, клиент, адрес" />
+          <div id="prod-list" class="production-orders"></div>
+        </aside>
+
+        <section class="production-detail">
+          <div id="prod-empty" class="card empty-state">
+            <h2>Выберите готовый замер</h2>
+            <p>Здесь будет чистое задание для производства: схема, размеры, детали, фото и комментарии.</p>
+          </div>
+          <article id="prod-card" class="production-order-card hidden"></article>
+        </section>
+      </section>
+    </main>
+
+    <script src="./production.js?v=20260515-production-v12"></script>
+  </body>
+</html>

@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SVG Stair Drawing Constructor</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        color: #0f172a;
+        background: #f6f8fb;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 14px 18px;
+        background: #fff;
+        border-bottom: 1px solid #d9e2ef;
+      }
+      h1 {
+        margin: 0;
+        font-size: 18px;
+      }
+      a {
+        display: inline-flex;
+        align-items: center;
+        min-height: 38px;
+        padding: 0 12px;
+        border-radius: 10px;
+        background: #0f172a;
+        color: #fff;
+        text-decoration: none;
+        font-weight: 800;
+      }
+      main {
+        min-height: calc(100vh - 67px);
+      }
+      iframe {
+        width: 100%;
+        height: calc(100vh - 67px);
+        border: 0;
+        background: #fff;
+      }
+      .fallback {
+        padding: 18px;
+        font-size: 14px;
+        color: #475569;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Полный SVG-конструктор</h1>
+      <a href="http://127.0.0.1:5178/" target="_blank" rel="noopener">Открыть на 5178</a>
+    </header>
+    <main>
+      <iframe src="http://127.0.0.1:5178/" title="Полный SVG-конструктор"></iframe>
+      <div class="fallback">
+        Если редактор не открылся внутри страницы, запустите полный конструктор и откройте ссылку выше.
+      </div>
+    </main>
+  </body>
+</html>

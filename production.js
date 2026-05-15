@@ -41,6 +41,10 @@ function val(value, fallback = "—") {
   return String(value);
 }
 
+function productionMeasurementMode(project) {
+  return project?.measurementMode === "detailed" ? "detailed" : "simple";
+}
+
 function setMessage(el, message, type = "") {
   if (!el) return;
   el.textContent = message || "";
@@ -204,17 +208,17 @@ function table(headers, rows) {
 }
 
 function finishRows(items, type) {
-  return (items || []).map((item) => {
+  return (items || []).filter((item) => item && Object.values(item).some((value) => val(value, ""))).map((item) => {
     const title = item.title || item.name || type;
     const length = item.length_mm ?? item.depth_mm ?? "";
     const width = item.width_mm ?? "";
     const height = item.height_mm ?? "";
     return `<tr>
       <td><b>${escapeHtml(title)}</b><br><small>${escapeHtml(item.comment || "")}</small></td>
-      <td>${escapeHtml(item.count || 1)}</td>
-      <td>${escapeHtml(length || "—")}</td>
-      <td>${escapeHtml(width || "—")}</td>
-      <td>${escapeHtml(height || item.thickness_mm || "—")}</td>
+      <td>${escapeHtml(val(item.count, "—"))}</td>
+      <td>${escapeHtml(num(length))}</td>
+      <td>${escapeHtml(num(width))}</td>
+      <td>${escapeHtml(num(height || item.thickness_mm))}</td>
       <td>${escapeHtml(item.material || "—")}</td>
       <td>${escapeHtml(item.finish || "—")}</td>
     </tr>`;
@@ -238,7 +242,7 @@ function countKv(label, value) {
 
 function productionVariant(project) {
   const type = String(project.type || "");
-  const mode = type.startsWith("empty") ? "empty" : "ready";
+  const mode = !type || type.startsWith("empty") ? "empty" : "ready";
   const opening = type.includes("straight") ? "straight" : type.includes("_u_") ? "u" : type.includes("_l_") ? "l" : "";
   const turn = type.includes("winder") ? "winder" : type.includes("landing") ? "landing" : "";
   return { type, mode, opening, turn };
@@ -250,40 +254,47 @@ function collectIssues(measurement, project, finish, svg) {
   const b1 = treadMode.sameTread === false ? treadMode.b1 : (p.b || p.treadDepth || p.b1 || treadMode.b1 || measurement.tread_depth_mm);
   const b2 = treadMode.sameTread === false ? treadMode.b2 : (p.b || p.treadDepth || p.b2 || treadMode.b2 || measurement.tread_depth_mm);
   const v = productionVariant(project);
+  const detailed = productionMeasurementMode(project) === "detailed";
   const missing = [];
-  const addIf = (label, value) => { if (!isPositiveNumber(value)) missing.push(label); };
+  const addIf = (label, value) => { if (!isPositiveNumber(value)) missing.push(`${label} не заполнен`); };
   const c = measurement.clients || {};
-  if (!String(c.name || "").trim()) missing.push("клиент");
-  if (!String(c.phone || "").trim()) missing.push("телефон");
-  if (!String(c.address || "").trim()) missing.push("адрес");
-  if (!svg) missing.push("итоговая схема");
+  if (!String(c.name || "").trim()) missing.push("клиент не заполнен");
+  if (!String(c.phone || "").trim()) missing.push("телефон не заполнен");
+  if (!String(c.address || "").trim()) missing.push("адрес не заполнен");
+  if (!project.type) missing.push("схема не выбрана");
+  if (!svg) missing.push("сохранённая схема/SVG не заполнена");
   // H — справочный размер: не попадает в «Требует уточнения», если пустой.
   if (v.mode === "empty" && v.opening === "straight") {
-    addIf("L — длина проёма", pickNumber(p.L, measurement.opening_length_mm, measurement.flight1_length_mm));
-    addIf("W — ширина проёма", pickNumber(p.W, measurement.opening_width_mm, measurement.flight1_width_mm));
+    addIf("L", pickNumber(p.L, measurement.opening_length_mm, measurement.flight1_length_mm));
+    addIf("W", pickNumber(p.W, measurement.opening_width_mm, measurement.flight1_width_mm));
   } else if (v.mode === "empty") {
-    addIf("M1 — длина зоны 1", pickNumber(p.M1, measurement.flight1_length_mm));
-    addIf("B1 — ширина зоны 1", pickNumber(p.B1, measurement.flight1_width_mm));
-    addIf("M2 — длина зоны 2", pickNumber(p.M2, measurement.flight2_length_mm));
-    addIf("B2 — ширина зоны 2", pickNumber(p.B2, measurement.flight2_width_mm));
-    addIf("ZL — длина поворотной зоны", pickNumber(p.ZL, measurement.corner_zone_length_mm));
-    addIf("ZW — ширина поворотной зоны", pickNumber(p.ZW, measurement.corner_zone_width_mm));
+    addIf("M1", pickNumber(p.M1, measurement.flight1_length_mm));
+    addIf("B1", pickNumber(p.B1, measurement.flight1_width_mm));
+    addIf("M2", pickNumber(p.M2, measurement.flight2_length_mm));
+    addIf("B2", pickNumber(p.B2, measurement.flight2_width_mm));
+    addIf("ZL", pickNumber(p.ZL, measurement.corner_zone_length_mm));
+    addIf("ZW", pickNumber(p.ZW, measurement.corner_zone_width_mm));
   } else {
-    addIf("M1 — длина марша 1", pickNumber(p.M1, measurement.flight1_length_mm));
-    addIf("B1 — ширина марша 1", pickNumber(p.B1, measurement.flight1_width_mm));
-    addIf("N1 — ступени марша 1", pickNumber(p.N1, measurement.flight1_steps_count));
-    addIf("b1 — проступь марша 1", b1);
+    addIf("M1", pickNumber(p.M1, measurement.flight1_length_mm));
+    addIf("B1", pickNumber(p.B1, measurement.flight1_width_mm));
+    if (detailed) {
+      addIf("N1", pickNumber(p.N1, measurement.flight1_steps_count));
+      addIf("b/b1", b1);
+      addIf("h", pickNumber(p.h, measurement.riser_height_mm));
+    }
     if (v.opening !== "straight") {
-      addIf("M2 — длина марша 2", pickNumber(p.M2, measurement.flight2_length_mm));
-      addIf("B2 — ширина марша 2", pickNumber(p.B2, measurement.flight2_width_mm));
-      addIf("N2 — ступени марша 2", pickNumber(p.N2, measurement.flight2_steps_count));
-      addIf("b2 — проступь марша 2", b2);
-      addIf("ZL — длина поворотной зоны", pickNumber(p.ZL, measurement.corner_zone_length_mm));
-      addIf("ZW — ширина поворотной зоны", pickNumber(p.ZW, measurement.corner_zone_width_mm));
-      if (v.turn === "winder") addIf("ZN — количество забежных", pickNumber(p.ZN, measurement.winder_steps_count));
+      addIf("M2", pickNumber(p.M2, measurement.flight2_length_mm));
+      addIf("B2", pickNumber(p.B2, measurement.flight2_width_mm));
+      if (detailed) {
+        addIf("N2", pickNumber(p.N2, measurement.flight2_steps_count));
+        addIf("b/b2", b2);
+        if (v.turn === "winder") addIf("ZN", pickNumber(p.ZN, measurement.winder_steps_count));
+      }
+      addIf("ZL", pickNumber(p.ZL, measurement.corner_zone_length_mm));
+      addIf("ZW", pickNumber(p.ZW, measurement.corner_zone_width_mm));
     }
   }
-  if (v.mode === "ready" && !(finish.steps?.length || finish.landings?.length || finish.boots?.length)) {
+  if (v.mode === "ready" && detailed && !(finish.steps?.length || finish.landings?.length || finish.boots?.length)) {
     missing.push("чистовые детали не заполнены");
   }
   return [...new Set(missing)];
@@ -320,21 +331,26 @@ function renderDimensions(measurement, project) {
 
 function renderFinish(finish) {
   const settings = finish.settings || {};
-  const headerRows = [
-    dimKv("Боковой вылет", settings.side_overhang_mm ?? settings.tread_overhang_mm),
-    dimKv("Передний вылет", settings.front_overhang_mm ?? settings.tread_overhang_mm),
-    kv("Сапожки у стен", settings.add_boots_by_walls ? "да" : "нет"),
-  ].filter(Boolean);
-  const header = `<div class="production-grid">${headerRows.join("")}</div>`;
   const stepRows = finishRows(finish.steps, "Ступени");
   const landingRows = finishRows(finish.landings, "Площадка");
   const bootRows = finishRows(finish.boots, "Сапожок");
-  const comments = (finish.comments || []).map((item) => `<div class="production-warning">${escapeHtml(item.text || item.comment || "")}</div>`).join("");
-  return `${header}
-    <h4>Ступени</h4>${table(["Деталь", "Кол-во", "Глубина/длина", "Ширина", "Толщина/высота", "Материал", "Отделка"], stepRows)}
-    <h4>Площадки</h4>${table(["Деталь", "Кол-во", "Длина", "Ширина", "Толщина", "Материал", "Отделка"], landingRows)}
-    <h4>Сапожки</h4>${table(["Деталь", "Кол-во", "Длина", "Ширина", "Высота/толщина", "Материал", "Отделка"], bootRows)}
-    ${comments ? `<h4>Комментарии к деталям</h4>${comments}` : ""}`;
+  const comments = (finish.comments || [])
+    .map((item) => item.text || item.comment || "")
+    .filter(Boolean)
+    .map((text) => `<div class="production-warning">${escapeHtml(text)}</div>`)
+    .join("");
+  const headerRows = [
+    dimKv("Боковой вылет", settings.side_overhang_mm ?? settings.tread_overhang_mm),
+    dimKv("Передний вылет", settings.front_overhang_mm ?? settings.tread_overhang_mm),
+    settings.add_boots_by_walls || bootRows.length ? kv("Сапожки у стен", settings.add_boots_by_walls ? "да" : "по списку ниже") : "",
+  ].filter(Boolean);
+  const parts = [];
+  if (headerRows.length) parts.push(`<div class="production-grid">${headerRows.join("")}</div>`);
+  if (stepRows.length) parts.push(`<h4>Ступени</h4>${table(["Деталь", "Кол-во", "Глубина/длина", "Ширина", "Толщина/высота", "Материал", "Отделка"], stepRows)}`);
+  if (landingRows.length) parts.push(`<h4>Площадки</h4>${table(["Деталь", "Кол-во", "Длина", "Ширина", "Толщина", "Материал", "Отделка"], landingRows)}`);
+  if (bootRows.length) parts.push(`<h4>Сапожки</h4>${table(["Деталь", "Кол-во", "Длина", "Ширина", "Высота/толщина", "Материал", "Отделка"], bootRows)}`);
+  if (comments) parts.push(`<h4>Комментарии к деталям</h4>${comments}`);
+  return parts.length ? parts.join("") : `<p class="production-empty-line">Чистовые детали и сапожки не заполнены.</p>`;
 }
 
 function renderMarks(project) {
@@ -414,11 +430,13 @@ function renderCard() {
         <p><b>Клиент:</b> ${escapeHtml(c.name || "Без имени")}</p>
         <p><b>Адрес:</b> ${escapeHtml(c.address || "Адрес не указан")}</p>
         <p><b>Телефон:</b> ${escapeHtml(c.phone || "—")}</p>
+        <p><b>Тип объекта / схема:</b> ${escapeHtml(m.site_situation || m.object_type || "Тип объекта не указан")} · ${escapeHtml(project.type || m.opening_type || "Схема не выбрана")}</p>
         <div class="production-badges"><span class="production-badge">${escapeHtml(m.status || "Готовый замер")}</span><span class="production-badge">${escapeHtml(project.measurementMode === "detailed" ? "Детальный" : "Простой")}</span><span class="production-badge">${escapeHtml(project.type || m.opening_type || "Схема")}</span></div>
         ${renderProductionStatusControl(m)}
       </div>
       <div class="production-actions no-print">
         <button class="btn secondary" onclick="window.print()">Печать</button>
+        <button class="btn secondary" id="back-prod-btn">Назад</button>
         <button class="btn secondary" id="copy-prod-link">Скопировать ссылку</button>
       </div>
     </header>
@@ -430,6 +448,10 @@ function renderCard() {
     ${section("Фото объекта", renderPhotos())}
     ${section("Комментарии", `<div class="production-note">${escapeHtml(m.general_comment || m.obstacles_comment || "Комментариев нет.")}</div>`)}
   `;
+  $("#back-prod-btn")?.addEventListener("click", () => {
+    if (history.length > 1) history.back();
+    else location.href = "./index.html";
+  });
   $("#copy-prod-link")?.addEventListener("click", async () => {
     try { await navigator.clipboard.writeText(location.href); alert("Ссылка скопирована"); } catch { alert(location.href); }
   });

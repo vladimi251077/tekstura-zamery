@@ -295,3 +295,13 @@ body:not([data-user-role*="admin"]):not([data-user-role*="manager"]):not([data-u
   .form-actions{position:sticky;bottom:0;background:rgba(255,255,255,.95);backdrop-filter:blur(10px);z-index:9;margin-left:-12px;margin-right:-12px;padding:10px 12px;border-top:1px solid var(--line)}
   .form-actions .btn,.form-actions a{width:100%;min-height:46px}
 }
+
+
+/* v14: простой режим оставляет только поля быстрого снятия объекта */
+body[data-measurement-mode="simple"] [data-simple-hidden],
+#measurement-form[data-measurement-mode="simple"] [data-simple-hidden]{display:none!important}
+@media (max-width: 520px){
+  .form-actions{grid-template-columns:1fr}
+  .form-actions .btn{min-height:48px}
+  .photo-upload{grid-template-columns:1fr}
+}

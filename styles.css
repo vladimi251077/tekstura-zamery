@@ -305,3 +305,31 @@ body[data-measurement-mode="simple"] [data-simple-hidden],
   .form-actions .btn{min-height:48px}
   .photo-upload{grid-template-columns:1fr}
 }
+
+/* v15: mobile-first measurement workspace */
+.stats-grid{display:none!important}
+.technical-actions{margin-top:10px;border:1px dashed var(--line);border-radius:16px;background:#f8fafc;padding:10px 12px}
+.technical-actions summary{cursor:pointer;font-weight:900;color:#334155}
+.technical-actions .archive-actions{margin:10px 0 0;display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px}
+.technical-actions .btn{min-height:40px;padding:9px 11px;border-radius:12px}
+@media (max-width: 720px){
+  body{background:#f8fafc}
+  .topbar{position:static;padding:8px 10px;gap:6px;border-bottom:0;background:#fff}
+  .topbar .eyebrow{display:none}
+  .topbar h1{font-size:18px;line-height:1.1}
+  .top-actions{gap:6px;font-size:11px}.top-actions .btn{min-height:34px;padding:7px 10px;border-radius:10px}
+  main{width:100%;margin:6px 0 58px;padding:0 6px}
+  .toolbar{grid-template-columns:1fr 1fr;margin:0 0 8px;gap:6px;padding:0}.toolbar select{grid-column:1/-1;min-height:38px}.toolbar .btn{min-height:38px;padding:8px 10px;border-radius:12px}
+  body:has(#measurement-form:not(.hidden)) .toolbar,
+  body:has(#measurement-form:not(.hidden)) .list-panel{display:none!important}
+  .layout{display:block}.detail-panel.card{border:0;border-radius:0;box-shadow:none;padding:6px;min-height:auto;background:transparent}.empty-state{min-height:45vh}
+  .form-head{margin:0 0 8px;gap:8px}.form-head h2{font-size:20px}.form-head-side{gap:6px}.badge{padding:5px 9px;font-size:11px}
+  .measurement-mode-box{padding:7px;border-radius:12px;gap:5px}.mode-title{font-size:11px}.mode-note{display:none}.mode-segment-btn{min-height:32px;padding:0 10px;font-size:12px}
+  .tabs{position:sticky;top:0;z-index:8;margin:0 -6px 8px;padding:6px;background:rgba(248,250,252,.96);border-bottom:1px solid var(--line);gap:5px}.tab{padding:8px 11px;font-size:12px}
+  input,textarea,select{padding:10px 11px;border-radius:12px}label{margin:9px 0 5px}textarea{min-height:66px}
+  .form-actions{position:sticky;bottom:0;display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:8px -6px 0;padding:7px 6px;background:rgba(255,255,255,.96);backdrop-filter:blur(10px);border-top:1px solid var(--line);z-index:9}.form-actions .btn{min-height:38px;padding:8px 9px;border-radius:12px;font-size:12px}.form-actions #accept-btn:not(.hidden){grid-column:1/-1}.form-message{margin-top:6px;font-size:12px;min-height:16px}
+  .technical-actions{margin:8px 0 0;padding:8px 10px;border-radius:12px}.technical-actions summary{font-size:12px}.technical-actions .archive-actions{grid-template-columns:1fr}.technical-actions .btn{min-height:36px;font-size:12px}
+}
+@media (min-width: 721px) and (max-width: 900px){
+  .layout{grid-template-columns:260px minmax(0,1fr)}.list-panel,.detail-panel{padding:12px}.form-actions .btn{min-height:42px}
+}

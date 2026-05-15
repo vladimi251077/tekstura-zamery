@@ -203,14 +203,28 @@
       .db-svg .step-no{font:800 11px system-ui, sans-serif;fill:#475569;paint-order:stroke;stroke:#fff;stroke-width:3px;text-anchor:middle}
       .db-svg .caption{font:900 16px system-ui, sans-serif;fill:#0f172a;paint-order:stroke;stroke:#fff;stroke-width:4px}
       @media(max-width:1000px){
-        body:has(.tab.active[data-tab="sizes"]) .detail-panel.card{padding:8px!important}
-        .db-shell{grid-template-columns:1fr}
-        .db-svg-wrap{min-height:440px;grid-template-rows:minmax(440px,auto) auto}
-        .db-svg-wrap svg{height:440px;min-height:440px}
-        .db-on-svg-fields{grid-template-columns:repeat(2,minmax(0,1fr));padding:8px}
-        .db-grid,.db-grid.three,.db-card-grid{grid-template-columns:1fr}
-        .db-actions{display:grid;grid-template-columns:1fr}
-        .db-btn{min-height:46px}
+        body:has(.tab.active[data-tab="sizes"]) main{padding:0 2px}
+        body:has(.tab.active[data-tab="sizes"]) .detail-panel.card{padding:2px!important}
+        .db-shell{grid-template-columns:1fr;gap:6px}
+        .db-right{order:-1}
+        .db-section{border-radius:14px;box-shadow:none}
+        .db-section>summary{padding:10px 12px}
+        .db-section-body{padding:8px}
+        .db-svg-wrap{min-height:58vh;grid-template-rows:minmax(58vh,auto) auto;padding:2px;border-radius:12px}
+        .db-svg-wrap svg{height:58vh;min-height:520px;width:100%}
+        .db-on-svg-fields{grid-template-columns:repeat(2,minmax(0,1fr));padding:5px;gap:5px}
+        .db-mini-input{min-height:36px;padding:5px 7px;border-radius:10px}.db-mini-input input{height:28px;font-size:16px}
+        .db-grid,.db-grid.three,.db-card-grid{grid-template-columns:1fr;gap:8px}
+        .db-actions{display:grid;grid-template-columns:1fr;gap:6px}
+        .db-btn{min-height:40px;padding:8px 10px;border-radius:12px}
+      }
+      @media(max-width:430px){
+        .db-svg-wrap{min-height:60vh;grid-template-rows:minmax(60vh,auto) auto}
+        .db-svg-wrap svg{height:60vh;min-height:540px}
+      }
+      @media(min-width:721px) and (max-width:1000px){
+        .db-svg-wrap{min-height:620px;grid-template-rows:minmax(620px,auto) auto}
+        .db-svg-wrap svg{height:620px;min-height:620px}
       }
     `;
     document.head.appendChild(style);

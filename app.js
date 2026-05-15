@@ -294,11 +294,14 @@ function applyRoleUI() {
   const deleteBtn = $("#soft-delete-btn");
   const jsonBtn = $("#download-json-btn");
   const csvBtn = $("#download-csv-btn");
+  const technicalActions = $("#technical-actions");
+  const canUseTechnicalActions = canUseTechnicalExports() || canArchiveMeasurements() || canDeleteMeasurements();
   acceptBtn?.classList.toggle("hidden", !canAcceptMeasurements());
   archiveBtn?.classList.toggle("hidden", !canArchiveMeasurements());
   deleteBtn?.classList.toggle("hidden", !canDeleteMeasurements());
   jsonBtn?.classList.toggle("hidden", !canUseTechnicalExports());
   csvBtn?.classList.toggle("hidden", !canUseTechnicalExports());
+  technicalActions?.classList.toggle("hidden", !canUseTechnicalActions);
   const form = $("#measurement-form");
   if (form) form.dataset.role = role;
 }

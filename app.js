@@ -598,6 +598,7 @@ function getRequiredMeasurementErrors() {
   const isStraight = type ? type.includes("straight") : String(form?.opening_type?.value || "").includes("Прям");
   const isWinder = type.includes("winder");
   const isDetailed = measurementMode === "detailed";
+  const isReady = mode === "ready";
   const errors = [];
   const needProject = (label, key, field) => {
     if (!positiveProjectValue(project, key, field)) errors.push(label);
@@ -619,21 +620,25 @@ function getRequiredMeasurementErrors() {
   } else {
     needProject("M1", "M1", "flight1_length_mm");
     needProject("B1", "B1", "flight1_width_mm");
+    if (isReady) needProject("N1", "N1", "flight1_steps_count");
     if (isDetailed) {
-      needProject("N1", "N1", "flight1_steps_count");
       if (!(positiveProjectValue(project, "b", "tread_depth_mm") || positiveProjectValue(project, "b1", "tread_depth_flight1_mm"))) errors.push("b/b1");
       needProject("h", "h", "riser_height_mm");
     }
     if (!isStraight) {
       needProject("M2", "M2", "flight2_length_mm");
       needProject("B2", "B2", "flight2_width_mm");
-      if (isDetailed) {
+      if (isReady) {
         needProject("N2", "N2", "flight2_steps_count");
-        if (!(positiveProjectValue(project, "b", "tread_depth_mm") || positiveProjectValue(project, "b2", "tread_depth_flight2_mm"))) errors.push("b/b2");
         if (isWinder) needProject("ZN", "ZN", "winder_steps_count");
       }
-      needProject("ZL", "ZL", "corner_zone_length_mm");
-      needProject("ZW", "ZW", "corner_zone_width_mm");
+      if (isDetailed) {
+        if (!(positiveProjectValue(project, "b", "tread_depth_mm") || positiveProjectValue(project, "b2", "tread_depth_flight2_mm"))) errors.push("b/b2");
+      }
+      if (isDetailed || !isWinder) {
+        needProject("ZL", "ZL", "corner_zone_length_mm");
+        needProject("ZW", "ZW", "corner_zone_width_mm");
+      }
     }
   }
   return [...new Set(errors)];

@@ -277,21 +277,24 @@ function collectIssues(measurement, project, finish, svg) {
   } else {
     addIf("M1", pickNumber(p.M1, measurement.flight1_length_mm));
     addIf("B1", pickNumber(p.B1, measurement.flight1_width_mm));
+    addIf("N1", pickNumber(p.N1, measurement.flight1_steps_count));
     if (detailed) {
-      addIf("N1", pickNumber(p.N1, measurement.flight1_steps_count));
       addIf("b/b1", b1);
       addIf("h", pickNumber(p.h, measurement.riser_height_mm));
     }
     if (v.opening !== "straight") {
       addIf("M2", pickNumber(p.M2, measurement.flight2_length_mm));
       addIf("B2", pickNumber(p.B2, measurement.flight2_width_mm));
+      addIf("N2", pickNumber(p.N2, measurement.flight2_steps_count));
+      if (v.turn === "winder") addIf("ZN", pickNumber(p.ZN, measurement.winder_steps_count));
       if (detailed) {
-        addIf("N2", pickNumber(p.N2, measurement.flight2_steps_count));
         addIf("b/b2", b2);
-        if (v.turn === "winder") addIf("ZN", pickNumber(p.ZN, measurement.winder_steps_count));
+        addIf("ZL", pickNumber(p.ZL, measurement.corner_zone_length_mm));
+        addIf("ZW", pickNumber(p.ZW, measurement.corner_zone_width_mm));
+      } else if (v.turn !== "winder") {
+        addIf("ZL", pickNumber(p.ZL, measurement.corner_zone_length_mm));
+        addIf("ZW", pickNumber(p.ZW, measurement.corner_zone_width_mm));
       }
-      addIf("ZL", pickNumber(p.ZL, measurement.corner_zone_length_mm));
-      addIf("ZW", pickNumber(p.ZW, measurement.corner_zone_width_mm));
     }
   }
   if (v.mode === "ready" && detailed && !(finish.steps?.length || finish.landings?.length || finish.boots?.length)) {
@@ -309,6 +312,7 @@ function renderDimensions(measurement, project) {
   const p = project.params || {};
   const treadMode = project.treadMode || {};
   const detailed = productionMeasurementMode(project) === "detailed";
+  const v = productionVariant(project);
   const b1 = treadMode.sameTread === false ? treadMode.b1 : (p.b || p.treadDepth || p.b1 || treadMode.b1 || measurement.tread_depth_mm);
   const b2 = treadMode.sameTread === false ? treadMode.b2 : (p.b || p.treadDepth || p.b2 || treadMode.b2 || measurement.tread_depth_mm);
   const rows = [
@@ -317,15 +321,15 @@ function renderDimensions(measurement, project) {
     dimKv("W — ширина проёма", pickNumber(p.W, measurement.opening_width_mm)),
     dimKv("Марш 1 M1", pickNumber(p.M1, measurement.flight1_length_mm)),
     dimKv("Марш 1 B1", pickNumber(p.B1, measurement.flight1_width_mm)),
-    detailed ? countKv("Ступени N1", pickNumber(p.N1, measurement.flight1_steps_count)) : "",
+    countKv("Марш 1: N1", pickNumber(p.N1, measurement.flight1_steps_count) ? `${pickNumber(p.N1, measurement.flight1_steps_count)} шт` : ""),
     detailed ? dimKv("Проступь b1", b1) : "",
     dimKv("Марш 2 M2", pickNumber(p.M2, measurement.flight2_length_mm)),
     dimKv("Марш 2 B2", pickNumber(p.B2, measurement.flight2_width_mm)),
-    detailed ? countKv("Ступени N2", pickNumber(p.N2, measurement.flight2_steps_count)) : "",
+    countKv("Марш 2: N2", pickNumber(p.N2, measurement.flight2_steps_count) ? `${pickNumber(p.N2, measurement.flight2_steps_count)} шт` : ""),
     detailed ? dimKv("Проступь b2", b2) : "",
-    dimKv("Поворот ZL", pickNumber(p.ZL, measurement.corner_zone_length_mm)),
-    dimKv("Поворот ZW", pickNumber(p.ZW, measurement.corner_zone_width_mm)),
-    detailed ? countKv("Забежные ZN", pickNumber(p.ZN, measurement.winder_steps_count)) : "",
+    detailed || v.turn !== "winder" ? dimKv("Поворот ZL", pickNumber(p.ZL, measurement.corner_zone_length_mm)) : "",
+    detailed || v.turn !== "winder" ? dimKv("Поворот ZW", pickNumber(p.ZW, measurement.corner_zone_width_mm)) : "",
+    v.turn === "winder" ? countKv("Забежные: ZN", pickNumber(p.ZN, measurement.winder_steps_count) ? `${pickNumber(p.ZN, measurement.winder_steps_count)} шт` : "") : "",
   ].filter(Boolean);
   return rows.length ? `<div class="production-grid">${rows.join("")}</div>` : `<p class="production-empty-line">Рабочие размеры не заполнены.</p>`;
 }

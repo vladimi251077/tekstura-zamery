@@ -642,8 +642,10 @@
     const v = variant();
     if (!isDetailedMode()) {
       if (v.key === "empty_straight") return ["L", "W"];
-      if (v.mode === "empty" || v.key !== "ready_straight") return ["M1", "B1", "M2", "B2", "ZL", "ZW"];
-      return ["M1", "B1"];
+      if (v.mode === "empty") return ["M1", "B1", "M2", "B2", "ZL", "ZW"];
+      if (v.key === "ready_straight") return ["M1", "B1", "N1"];
+      if (v.turn === "winder") return ["M1", "B1", "N1", "M2", "B2", "N2", "ZN"];
+      return ["M1", "B1", "N1", "M2", "B2", "N2", "ZL", "ZW"];
     }
     const tread = projectState?.treadMode?.sameTread !== false ? ["b"] : ["b1", "b2"];
     const withOptionalH = (items) => [...items, "H"];

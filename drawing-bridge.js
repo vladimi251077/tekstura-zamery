@@ -1,7 +1,7 @@
 (() => {
   const ROOT_ID = "drawing-bridge-root";
   const STYLE_ID = "drawing-bridge-style-v14";
-  const SECTION_STORAGE_KEY = "tekstura:drawing-bridge:sections";
+  const SECTION_STORAGE_KEY = "tekstura:drawing-bridge:sections:v15-simple";
 
   const VIEW_W = 1100;
   const VIEW_H = 760;
@@ -167,6 +167,9 @@
       .db-mini-input span{height:34px;display:grid;place-items:center;background:#0f172a;color:#fff;font-size:11px;font-weight:950}
       .db-mini-input input{border:0;border-radius:0;min-height:34px;text-align:center;font-size:13px;font-weight:950;padding:0 4px}
       .db-mini-input.is-active{outline:3px solid rgba(245,158,11,.2)}
+      .db-measurement-simple .db-section:not([open])>summary{min-height:40px;background:#fff}
+      .db-measurement-simple .db-section-body{gap:8px}
+      .db-measurement-simple h4{margin:4px 0 0;font-size:13px}
       .db-card-list{display:grid;gap:8px}
       .db-card{border:1px solid #d9e2ef;border-radius:12px;background:#fbfdff;padding:10px;display:grid;gap:8px}
       .db-card-head{display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight:950;color:#0f172a}
@@ -599,9 +602,9 @@
       : {
           frame: true,
           scheme: true,
-          ascent: true,
-          upperBalustrade: true,
-          siteMarks: true,
+          ascent: false,
+          upperBalustrade: false,
+          siteMarks: false,
           comments: true,
           actions: false,
           walls: false,
@@ -613,11 +616,9 @@
     if (!isDetailedMode()) {
       state.frame = true;
       state.scheme = true;
-      state.ascent = true;
-      if (variant().mode === "empty") {
-        state.upperBalustrade = state.upperBalustrade !== false;
-        state.siteMarks = state.siteMarks !== false;
-      }
+      state.ascent = Boolean(parsed.ascent);
+      state.upperBalustrade = Boolean(parsed.upperBalustrade);
+      state.siteMarks = Boolean(parsed.siteMarks);
       state.comments = true;
     }
     return state;
@@ -2166,6 +2167,9 @@
       `
       : `
         ${section("frame", "Основные размеры", frameSection())}
+        ${section("ascent", "Направление подъёма", ascentSection())}
+        ${section("upperBalustrade", "Верхняя балюстрада", upperBalustradeSection())}
+        ${section("siteMarks", "Стены / продолжение / препятствия", siteMarksSection())}
         ${section("comments", "Комментарий", commentsSection())}
       `;
     root.innerHTML = `<div class="db-shell db-mode-${variant().mode} db-measurement-${measurementMode()}">

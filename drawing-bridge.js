@@ -1068,13 +1068,17 @@
       if (!visibleDimensionIds.has(id)) return;
       dimensions.push({ id, label, value, unit, side, start, end, offset });
     };
-    const addTreadsVertical = (rect, count) => {
-      if (!isDetailedMode()) return;
-      for (let i = 1; i < count; i += 1) lines.push({ start: { x: rect.x, y: rect.y + rect.h * i / count }, end: { x: rect.x + rect.w, y: rect.y + rect.h * i / count }, kind: "tread" });
+    const shouldDrawTreads = () => v.mode === "ready";
+    const visualTreadCount = (count, fallback) => Math.max(1, Math.round(Number(count) || fallback));
+    const addTreadsVertical = (rect, count, fallback = 8) => {
+      if (!shouldDrawTreads()) return;
+      const steps = visualTreadCount(count, fallback);
+      for (let i = 1; i < steps; i += 1) lines.push({ start: { x: rect.x, y: rect.y + rect.h * i / steps }, end: { x: rect.x + rect.w, y: rect.y + rect.h * i / steps }, kind: "tread" });
     };
-    const addTreadsHorizontal = (rect, count) => {
-      if (!isDetailedMode()) return;
-      for (let i = 1; i < count; i += 1) lines.push({ start: { x: rect.x + rect.w * i / count, y: rect.y }, end: { x: rect.x + rect.w * i / count, y: rect.y + rect.h }, kind: "tread" });
+    const addTreadsHorizontal = (rect, count, fallback = 10) => {
+      if (!shouldDrawTreads()) return;
+      const steps = visualTreadCount(count, fallback);
+      for (let i = 1; i < steps; i += 1) lines.push({ start: { x: rect.x + rect.w * i / steps, y: rect.y }, end: { x: rect.x + rect.w * i / steps, y: rect.y + rect.h }, kind: "tread" });
     };
     const setFlightDirection = (id, start, end) => {
       flightDirections[id] = { start, end };

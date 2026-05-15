@@ -250,6 +250,7 @@ function productionVariant(project) {
 
 function collectIssues(measurement, project, finish, svg) {
   const p = project.params || {};
+  const slabThickness = p.T ?? p.slabThickness ?? measurement.slab_thickness_mm;
   const treadMode = project.treadMode || {};
   const b1 = treadMode.sameTread === false ? treadMode.b1 : (p.b || p.treadDepth || p.b1 || treadMode.b1 || measurement.tread_depth_mm);
   const b2 = treadMode.sameTread === false ? treadMode.b2 : (p.b || p.treadDepth || p.b2 || treadMode.b2 || measurement.tread_depth_mm);
@@ -263,10 +264,12 @@ function collectIssues(measurement, project, finish, svg) {
   if (!String(c.address || "").trim()) missing.push("адрес не заполнен");
   if (!project.type) missing.push("схема не выбрана");
   if (!svg) missing.push("сохранённая схема/SVG не заполнена");
-  // H — справочный размер: не попадает в «Требует уточнения», если пустой.
+  // H/T обязательны для пустого проёма и справочные для готовой лестницы.
   if (v.mode === "empty" && v.opening === "straight") {
     addIf("L", pickNumber(p.L, measurement.opening_length_mm, measurement.flight1_length_mm));
     addIf("W", pickNumber(p.W, measurement.opening_width_mm, measurement.flight1_width_mm));
+    addIf("H", pickNumber(p.H, measurement.height_clean_to_clean_mm));
+    addIf("T", pickNumber(slabThickness));
   } else if (v.mode === "empty") {
     addIf("M1", pickNumber(p.M1, measurement.flight1_length_mm));
     addIf("B1", pickNumber(p.B1, measurement.flight1_width_mm));
@@ -274,6 +277,8 @@ function collectIssues(measurement, project, finish, svg) {
     addIf("B2", pickNumber(p.B2, measurement.flight2_width_mm));
     addIf("ZL", pickNumber(p.ZL, measurement.corner_zone_length_mm));
     addIf("ZW", pickNumber(p.ZW, measurement.corner_zone_width_mm));
+    addIf("H", pickNumber(p.H, measurement.height_clean_to_clean_mm));
+    addIf("T", pickNumber(slabThickness));
   } else {
     addIf("M1", pickNumber(p.M1, measurement.flight1_length_mm));
     addIf("B1", pickNumber(p.B1, measurement.flight1_width_mm));
@@ -310,13 +315,15 @@ function renderIssues(issues) {
 
 function renderDimensions(measurement, project) {
   const p = project.params || {};
+  const slabThickness = p.T ?? p.slabThickness ?? measurement.slab_thickness_mm;
   const treadMode = project.treadMode || {};
   const detailed = productionMeasurementMode(project) === "detailed";
   const v = productionVariant(project);
   const b1 = treadMode.sameTread === false ? treadMode.b1 : (p.b || p.treadDepth || p.b1 || treadMode.b1 || measurement.tread_depth_mm);
   const b2 = treadMode.sameTread === false ? treadMode.b2 : (p.b || p.treadDepth || p.b2 || treadMode.b2 || measurement.tread_depth_mm);
   const rows = [
-    detailed ? dimKv("Высота H", pickNumber(p.H, measurement.height_clean_to_clean_mm)) : "",
+    v.mode === "empty" || detailed ? dimKv("H — высота от пола до пола", pickNumber(p.H, measurement.height_clean_to_clean_mm)) : "",
+    v.mode === "empty" ? dimKv("T — толщина перекрытия/проёма", pickNumber(slabThickness)) : "",
     dimKv("L — длина проёма", pickNumber(p.L, measurement.opening_length_mm)),
     dimKv("W — ширина проёма", pickNumber(p.W, measurement.opening_width_mm)),
     dimKv("Марш 1 M1", pickNumber(p.M1, measurement.flight1_length_mm)),

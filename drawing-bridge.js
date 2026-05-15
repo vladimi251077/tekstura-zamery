@@ -464,6 +464,8 @@
     const params = projectState?.params || {};
     const map = {
       height: "height_clean_to_clean_mm",
+      slabThickness: "slab_thickness_mm",
+      T: "slab_thickness_mm",
       openingLength: "opening_length_mm",
       openingWidth: "opening_width_mm",
       firstFlightLength: "flight1_length_mm",
@@ -529,6 +531,8 @@
     const tread = treadValues();
     return {
       height: numberField("height_clean_to_clean_mm", 0),
+      slabThickness: numberField("slab_thickness_mm", 0),
+      T: numberField("slab_thickness_mm", 0),
       openingLength: numberField("opening_length_mm", 0),
       openingWidth: numberField("opening_width_mm", 0),
       firstFlightLength: numberField("flight1_length_mm", 0),
@@ -641,8 +645,8 @@
   function visibleParams() {
     const v = variant();
     if (!isDetailedMode()) {
-      if (v.key === "empty_straight") return ["L", "W"];
-      if (v.mode === "empty") return ["M1", "B1", "M2", "B2", "ZL", "ZW"];
+      if (v.key === "empty_straight") return ["L", "W", "H", "T"];
+      if (v.mode === "empty") return ["M1", "B1", "M2", "B2", "ZL", "ZW", "H", "T"];
       if (v.key === "ready_straight") return ["M1", "B1", "N1"];
       if (v.turn === "winder") return ["M1", "B1", "N1", "M2", "B2", "N2", "ZN"];
       return ["M1", "B1", "N1", "M2", "B2", "N2", "ZL", "ZW"];
@@ -658,7 +662,8 @@
   const FIELD_META = {
     L: { name: "opening_length_mm", label: "L — длина проёма", unit: "мм" },
     W: { name: "opening_width_mm", label: "W — ширина проёма", unit: "мм" },
-    H: { name: "height_clean_to_clean_mm", label: "H — высота", unit: "мм" },
+    H: { name: "height_clean_to_clean_mm", label: "H — высота от пола до пола", unit: "мм" },
+    T: { name: "slab_thickness_mm", label: "T — толщина перекрытия/проёма", unit: "мм" },
     M1: { name: "flight1_length_mm", label: "M1 — длина марша 1", unit: "мм", auto: "flight1Length" },
     B1: { name: "flight1_width_mm", label: "B1 — ширина марша 1", unit: "мм" },
     N1: { name: "flight1_steps_count", label: "N1 — ступени марша 1", unit: "шт" },
@@ -1094,6 +1099,7 @@
       addDim("L", "L", p.openingLength || l, "мм", "top", { x: 0, y: 0 }, { x: l, y: 0 }, 70);
       addDim("W", "W", p.openingWidth || w, "мм", "left", { x: 0, y: 0 }, { x: 0, y: w }, 70);
       addDim("H", "H", p.height, "мм", "right", { x: l, y: 0 }, { x: l, y: w }, 120);
+      addDim("T", "T", p.slabThickness, "мм", "bottom", { x: 0, y: w }, { x: l, y: w }, 130);
       title = "Пустой прямой проём";
     } else if (v.key.startsWith("empty_l")) {
       const right = v.key.includes("_right");
@@ -1122,6 +1128,7 @@
       addDim("ZL", "ZL", p.turnLength, "мм", "top", { x: turn.x, y: turn.y }, { x: turn.x + turn.w, y: turn.y }, 125);
       addDim("ZW", "ZW", p.turnWidth, "мм", right ? "right" : "left", { x: turn.x, y: turn.y }, { x: turn.x, y: turn.y + turn.h }, 125);
       addDim("H", "H", p.height, "мм", right ? "left" : "right", { x: outer.x + outer.w, y: outer.y }, { x: outer.x + outer.w, y: outer.y + outer.h }, 150);
+      addDim("T", "T", p.slabThickness, "мм", "bottom", { x: outer.x, y: outer.y + outer.h }, { x: outer.x + outer.w, y: outer.y + outer.h }, 165);
       title = right ? "Пустой Г-проём правый" : "Пустой Г-проём левый";
     } else if (v.key === "ready_straight") {
       const f1 = makeRect("flight1", 0, 0, m1, b1, "flight1");

@@ -610,6 +610,8 @@ function getRequiredMeasurementErrors() {
   if (mode === "empty" && isStraight) {
     needProject("L", "L", "opening_length_mm");
     needProject("W", "W", "opening_width_mm");
+    needProject("H", "H", "height_clean_to_clean_mm");
+    needProject("T", "T", "slab_thickness_mm");
   } else if (mode === "empty") {
     needProject("M1", "M1", "flight1_length_mm");
     needProject("B1", "B1", "flight1_width_mm");
@@ -617,6 +619,8 @@ function getRequiredMeasurementErrors() {
     needProject("B2", "B2", "flight2_width_mm");
     needProject("ZL", "ZL", "corner_zone_length_mm");
     needProject("ZW", "ZW", "corner_zone_width_mm");
+    needProject("H", "H", "height_clean_to_clean_mm");
+    needProject("T", "T", "slab_thickness_mm");
   } else {
     needProject("M1", "M1", "flight1_length_mm");
     needProject("B1", "B1", "flight1_width_mm");

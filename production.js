@@ -267,13 +267,109 @@ function productionDims(measurement, project) {
   };
 }
 
-function collectIssues(measurement, project, finish, svg) {
+const PRODUCTION_FIELD_MATRIX = {
+  empty: {
+    simple: {
+      straight: ["L", "W", "H", "T"],
+      turn: ["M1", "B1", "M2", "B2", "ZL", "ZW", "H", "T"],
+    },
+    detailed: {
+      straight: ["L", "W", "H", "T"],
+      turn: ["M1", "B1", "M2", "B2", "ZL", "ZW", "H", "T"],
+    },
+  },
+  ready: {
+    simple: {
+      straight: ["B1", "N1", "b", "h", "M1"],
+      landing: ["B1", "N1", "B2", "N2", "b", "h", "M1", "M2"],
+      winder: ["B1", "N1", "B2", "N2", "ZN", "b", "h", "M1", "M2"],
+    },
+    detailed: {
+      straight: ["B1", "N1", "h", "tread1", "M1"],
+      landing: ["B1", "N1", "B2", "N2", "h", "tread", "M1", "M2"],
+      winder: ["B1", "N1", "B2", "N2", "ZN", "h", "tread", "M1", "M2"],
+    },
+  },
+};
+
+const PRODUCTION_REQUIRED_OVERRIDES = {
+  ready: {
+    simple: {
+      straight: ["B1", "N1"],
+      landing: ["B1", "N1", "B2", "N2"],
+      winder: ["B1", "N1", "B2", "N2", "ZN"],
+    },
+    detailed: {
+      straight: ["B1", "N1", "h", "tread1"],
+      landing: ["B1", "N1", "B2", "N2", "h", "tread"],
+      winder: ["B1", "N1", "B2", "N2", "ZN", "h", "tread"],
+    },
+  },
+};
+
+const PRODUCTION_FIELD_LABELS = {
+  L: "L — длина проёма",
+  W: "W — ширина проёма",
+  H: "H — высота от пола до пола",
+  T: "T — толщина перекрытия/проёма",
+  M1: "Марш 1 M1 расчёт",
+  B1: "Марш 1 B1",
+  N1: "Марш 1: N1",
+  M2: "Марш 2 M2 расчёт",
+  B2: "Марш 2 B2",
+  N2: "Марш 2: N2",
+  ZL: "Поворот ZL",
+  ZW: "Поворот ZW",
+  ZN: "Забежные: ZN",
+  h: "Подступёнок h",
+  b: "Проступь b",
+  b1: "Проступь b1",
+  b2: "Проступь b2",
+};
+
+function productionMatrixShape(v) {
+  if (v.opening === "straight") return "straight";
+  return v.turn === "winder" ? "winder" : "landing";
+}
+
+function productionMatrixFields(project, v, options = {}) {
+  const mode = productionMeasurementMode(project);
+  const shape = productionMatrixShape(v);
+  const source = options.required ? PRODUCTION_REQUIRED_OVERRIDES : PRODUCTION_FIELD_MATRIX;
+  const fields = source[v.mode]?.[mode]?.[shape] || PRODUCTION_FIELD_MATRIX[v.mode]?.[mode]?.[shape] || [];
+  const sameTread = project?.treadMode?.sameTread !== false;
+  return fields.flatMap((code) => {
+    if (code === "tread") return sameTread ? ["b"] : ["b1", "b2"];
+    if (code === "tread1") return sameTread ? ["b"] : ["b1"];
+    return [code];
+  });
+}
+
+function productionFieldValues(measurement, project, dims = productionDims(measurement, project)) {
   const p = project.params || {};
-  const dims = productionDims(measurement, project);
   const treadMode = project.treadMode || {};
-  const b1 = treadMode.sameTread === false ? treadMode.b1 : (p.b || p.treadDepth || p.b1 || treadMode.b1 || measurement.tread_depth_mm);
-  const b2 = treadMode.sameTread === false ? treadMode.b2 : (p.b || p.treadDepth || p.b2 || treadMode.b2 || measurement.tread_depth_mm);
-  const h = pickNumber(p.h, p.riserHeight, measurement.riser_height_mm);
+  const sameTread = treadMode.sameTread !== false;
+  const b = pickNumber(p.b, p.treadDepth, treadMode.b1, measurement.tread_depth_mm, 250);
+  const b1 = sameTread ? b : pickNumber(p.b1, p.treadDepthFlight1, treadMode.b1, measurement.tread_depth_mm, b);
+  const b2 = sameTread ? b : pickNumber(p.b2, p.treadDepthFlight2, treadMode.b2, measurement.tread_depth_mm, b);
+  const h = pickNumber(p.h, p.riserHeight, measurement.riser_height_mm, 180);
+  const v = productionVariant(project);
+  const calcM1 = isPositiveNumber(dims.N1) && isPositiveNumber(b1) ? dims.N1 * b1 : dims.M1;
+  const calcM2 = isPositiveNumber(dims.N2) && isPositiveNumber(b2) ? dims.N2 * b2 : dims.M2;
+  return {
+    ...dims,
+    M1: v.mode === "ready" ? calcM1 : dims.M1,
+    M2: v.mode === "ready" ? calcM2 : dims.M2,
+    h,
+    b,
+    b1,
+    b2,
+  };
+}
+
+function collectIssues(measurement, project, finish, svg) {
+  const dims = productionDims(measurement, project);
+  const values = productionFieldValues(measurement, project, dims);
   const v = productionVariant(project);
   const detailed = productionMeasurementMode(project) === "detailed";
   const missing = [];
@@ -284,41 +380,7 @@ function collectIssues(measurement, project, finish, svg) {
   if (!String(c.address || "").trim()) missing.push("адрес не заполнен");
   if (!project.type) missing.push("схема не выбрана");
   if (!svg) missing.push("сохранённая схема/SVG не заполнена");
-  // H/T обязательны для пустого проёма и справочные для готовой лестницы.
-  if (v.mode === "empty" && v.opening === "straight") {
-    addIf("L", dims.L || dims.M1);
-    addIf("W", dims.W || dims.B1);
-    addIf("H", dims.H);
-    addIf("T", dims.T);
-  } else if (v.mode === "empty") {
-    addIf("M1", dims.M1);
-    addIf("B1", dims.B1);
-    addIf("M2", dims.M2);
-    addIf("B2", dims.B2);
-    addIf("ZL", dims.ZL);
-    addIf("ZW", dims.ZW);
-    addIf("H", dims.H);
-    addIf("T", dims.T);
-  } else {
-    addIf("M1", dims.M1);
-    addIf("B1", dims.B1);
-    addIf("N1", dims.N1);
-    if (detailed) {
-      addIf("b/b1", b1);
-      addIf("h", h);
-    }
-    if (v.opening !== "straight") {
-      addIf("M2", dims.M2);
-      addIf("B2", dims.B2);
-      addIf("N2", dims.N2);
-      if (v.turn === "winder") addIf("ZN", dims.ZN);
-      if (detailed) {
-        addIf("b/b2", b2);
-        addIf("ZL", dims.ZL);
-        addIf("ZW", dims.ZW);
-      }
-    }
-  }
+  productionMatrixFields(project, v, { required: true }).forEach((code) => addIf(code, values[code]));
   if (v.mode === "ready" && detailed && !(finish.steps?.length || finish.landings?.length || finish.boots?.length)) {
     missing.push("чистовые детали не заполнены");
   }
@@ -331,30 +393,16 @@ function renderIssues(issues) {
 }
 
 function renderDimensions(measurement, project) {
-  const p = project.params || {};
   const dims = productionDims(measurement, project);
-  const treadMode = project.treadMode || {};
-  const detailed = productionMeasurementMode(project) === "detailed";
+  const values = productionFieldValues(measurement, project, dims);
   const v = productionVariant(project);
-  const b1 = treadMode.sameTread === false ? treadMode.b1 : (p.b || p.treadDepth || p.b1 || treadMode.b1 || measurement.tread_depth_mm);
-  const b2 = treadMode.sameTread === false ? treadMode.b2 : (p.b || p.treadDepth || p.b2 || treadMode.b2 || measurement.tread_depth_mm);
-  const rows = [
-    v.mode === "empty" || detailed ? dimKv("H — высота от пола до пола", dims.H) : "",
-    v.mode === "empty" ? dimKv("T — толщина перекрытия/проёма", dims.T) : "",
-    dimKv("L — длина проёма", dims.L),
-    dimKv("W — ширина проёма", dims.W),
-    dimKv("Марш 1 M1", dims.M1),
-    dimKv("Марш 1 B1", dims.B1),
-    v.mode === "ready" && isPositiveNumber(dims.N1) ? countKv("Марш 1: N1", `${dims.N1} шт`) : "",
-    detailed ? dimKv("Проступь b1", b1) : "",
-    v.opening !== "straight" ? dimKv("Марш 2 M2", dims.M2) : "",
-    v.opening !== "straight" ? dimKv("Марш 2 B2", dims.B2) : "",
-    v.mode === "ready" && v.opening !== "straight" && isPositiveNumber(dims.N2) ? countKv("Марш 2: N2", `${dims.N2} шт`) : "",
-    detailed && v.opening !== "straight" ? dimKv("Проступь b2", b2) : "",
-    v.opening !== "straight" && detailed ? dimKv("Поворот ZL", dims.ZL) : "",
-    v.opening !== "straight" && detailed ? dimKv("Поворот ZW", dims.ZW) : "",
-    v.mode === "ready" && v.turn === "winder" && isPositiveNumber(dims.ZN) ? countKv("Забежные: ZN", `${dims.ZN} шт`) : "",
-  ].filter(Boolean);
+  const rows = productionMatrixFields(project, v).map((code) => {
+    const label = PRODUCTION_FIELD_LABELS[code] || code;
+    if (["N1", "N2", "ZN"].includes(code)) {
+      return isPositiveNumber(values[code]) ? countKv(label, `${values[code]} шт`) : "";
+    }
+    return dimKv(label, values[code]);
+  }).filter(Boolean);
   return rows.length ? `<div class="production-grid">${rows.join("")}</div>` : `<p class="production-empty-line">Рабочие размеры не заполнены.</p>`;
 }
 

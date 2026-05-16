@@ -171,6 +171,9 @@
       .db-mini-input span{height:34px;display:grid;place-items:center;background:#0f172a;color:#fff;font-size:11px;font-weight:950}
       .db-mini-input input{border:0;border-radius:0;min-height:34px;text-align:center;font-size:13px;font-weight:950;padding:0 4px}
       .db-mini-input.is-active{outline:3px solid rgba(245,158,11,.2)}
+      .db-step-calc{border:1px solid #d9e2ef;border-radius:12px;background:#fbfdff;padding:8px;display:grid;gap:7px}
+      .db-step-calc-head{font-size:12px;font-weight:950;color:#0f172a}
+      .db-step-calc-grid{display:grid;grid-template-columns:repeat(2,minmax(0,140px));gap:7px}
       .db-measurement-simple .db-section:not([open])>summary{min-height:40px;background:#fff}
       .db-measurement-simple .db-section-body{gap:8px}
       .db-measurement-simple h4{margin:4px 0 0;font-size:13px}
@@ -663,21 +666,45 @@
     </details>`;
   }
 
+  const FIELD_MATRIX = {
+    empty: {
+      simple: {
+        straight: ["L", "W", "H", "T"],
+        turn: ["M1", "B1", "M2", "B2", "ZL", "ZW", "H", "T"],
+      },
+      detailed: {
+        straight: ["L", "W", "H", "T"],
+        turn: ["M1", "B1", "M2", "B2", "ZL", "ZW", "H", "T"],
+      },
+    },
+    ready: {
+      simple: {
+        straight: ["B1", "N1"],
+        landing: ["B1", "N1", "B2", "N2"],
+        winder: ["B1", "N1", "B2", "N2", "ZN"],
+      },
+      detailed: {
+        straight: ["B1", "N1", "h", "tread1"],
+        landing: ["B1", "N1", "B2", "N2", "h", "tread"],
+        winder: ["B1", "N1", "B2", "N2", "ZN", "h", "tread"],
+      },
+    },
+  };
+
+  function expandMatrixFields(fields) {
+    return fields.flatMap((code) => {
+      if (code === "tread") return projectState?.treadMode?.sameTread !== false ? ["b"] : ["b1", "b2"];
+      if (code === "tread1") return projectState?.treadMode?.sameTread !== false ? ["b"] : ["b1"];
+      return [code];
+    });
+  }
+
   function visibleParams() {
     const v = variant();
-    if (!isDetailedMode()) {
-      if (v.key === "empty_straight") return ["L", "W", "H", "T"];
-      if (v.mode === "empty") return ["M1", "B1", "M2", "B2", "ZL", "ZW", "H", "T"];
-      if (v.key === "ready_straight") return ["B1", "N1"];
-      if (v.turn === "winder") return ["B1", "N1", "B2", "N2", "ZN"];
-      return ["B1", "N1", "B2", "N2"];
-    }
-    const tread = projectState?.treadMode?.sameTread !== false ? ["b"] : ["b1", "b2"];
-    const withOptionalH = (items) => [...items, "H"];
-    if (v.key === "empty_straight") return withOptionalH(["L", "W"]);
-    if (v.mode === "empty") return withOptionalH(["M1", "B1", "M2", "B2", "ZL", "ZW"]);
-    if (v.key === "ready_straight") return withOptionalH(["M1", "B1", "N1", "h", ...(projectState?.treadMode?.sameTread !== false ? ["b"] : ["b1"])]);
-    return withOptionalH(["M1", "B1", "N1", "M2", "B2", "N2", "ZL", "ZW", "ZN", "h", ...tread]);
+    const mode = isDetailedMode() ? "detailed" : "simple";
+    const shape = v.opening === "straight" ? "straight" : v.turn === "winder" ? "winder" : "landing";
+    const fields = FIELD_MATRIX[v.mode]?.[mode]?.[shape] || FIELD_MATRIX[v.mode]?.[mode]?.turn || [];
+    return expandMatrixFields(fields);
   }
 
   const FIELD_META = {
@@ -743,6 +770,22 @@
     }).join("");
   }
 
+  function simpleReadyStepCalc() {
+    if (isDetailedMode() || variant().mode !== "ready") return "";
+    const input = (code) => {
+      const meta = FIELD_META[code];
+      return `<label class="db-mini-input" title="${escapeHtml(meta.label)}">
+        <span>${escapeHtml(code)}</span>
+        <input data-field="${meta.name}" data-param-code="${code}" ${numericInputAttrs()} value="${escapeHtml(readDraftField(meta.name))}"/>
+      </label>`;
+    };
+    return `<div class="db-step-calc">
+      <div class="db-step-calc-head">Расчёт ступени</div>
+      <div class="db-step-calc-grid">${input("b")}${input("h")}</div>
+      <div class="db-muted">По умолчанию b = ${DEFAULT_STEP_DEPTH} мм, h = ${DEFAULT_RISER} мм. Измените, если на объекте другая проступь или высота подступёнка.</div>
+    </div>`;
+  }
+
   function calculatedLengthRows() {
     const v = variant();
     if (isDetailedMode() || v.mode !== "ready") return "";
@@ -798,6 +841,7 @@
         : `<div class="db-muted">M1/M2 считаются от каркасной проступи: M1 = N1 × b, M2 = N2 × b. Вылеты готовых деталей считаются отдельно и не меняют длину каркаса.</div>`;
     return `
       <div class="db-grid">${fieldCodes.map(fieldControl).join("")}</div>
+      ${simpleReadyStepCalc()}
       ${calcRows}
       ${simpleNote}
       ${calcNote}

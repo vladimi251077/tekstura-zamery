@@ -815,6 +815,131 @@ function previewRow(label, value) {
   return `<div class="preview-row"><span>${escapeHtml(label)}</span><b>${previewValue(value)}</b></div>`;
 }
 
+
+function previewNumber(...values) {
+  for (const value of values) {
+    const n = Number(value);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return null;
+}
+
+function previewMeasurementMode(project) {
+  return project?.measurementMode === "detailed" ? "detailed" : "simple";
+}
+
+function previewVariant(project) {
+  const type = String(project?.type || "");
+  const mode = !type || type.startsWith("empty") ? "empty" : "ready";
+  const opening = type.includes("straight") ? "straight" : type.includes("_u_") ? "u" : type.includes("_l_") ? "l" : "";
+  const turn = type.includes("winder") ? "winder" : type.includes("landing") ? "landing" : "";
+  return { type, mode, opening, turn };
+}
+
+const PREVIEW_FIELD_MATRIX = {
+  empty: {
+    simple: {
+      straight: ["L", "W", "H", "T"],
+      turn: ["M1", "B1", "M2", "B2", "ZL", "ZW", "H", "T"],
+    },
+    detailed: {
+      straight: ["L", "W", "H", "T"],
+      turn: ["M1", "B1", "M2", "B2", "ZL", "ZW", "H", "T"],
+    },
+  },
+  ready: {
+    simple: {
+      straight: ["B1", "N1", "b", "h", "M1"],
+      landing: ["B1", "N1", "B2", "N2", "b", "h", "M1", "M2"],
+      winder: ["B1", "N1", "B2", "N2", "ZN", "b", "h", "M1", "M2"],
+    },
+    detailed: {
+      straight: ["B1", "N1", "h", "tread1", "M1"],
+      landing: ["B1", "N1", "B2", "N2", "h", "tread", "M1", "M2"],
+      winder: ["B1", "N1", "B2", "N2", "ZN", "h", "tread", "M1", "M2"],
+    },
+  },
+};
+
+const PREVIEW_FIELD_LABELS = {
+  L: "L — длина проёма",
+  W: "W — ширина проёма",
+  H: "H — высота от пола до пола",
+  T: "T — толщина перекрытия/проёма",
+  M1: "Марш 1 M1 расчёт/геометрия",
+  B1: "Марш 1 B1",
+  N1: "Марш 1: N1",
+  M2: "Марш 2 M2 расчёт/геометрия",
+  B2: "Марш 2 B2",
+  N2: "Марш 2: N2",
+  ZL: "Поворот ZL",
+  ZW: "Поворот ZW",
+  ZN: "Забежные: ZN",
+  h: "Подступёнок h",
+  b: "Проступь b",
+  b1: "Проступь b1",
+  b2: "Проступь b2",
+};
+
+function previewMatrixFields(project, variant) {
+  const measurementMode = previewMeasurementMode(project);
+  const shape = variant.opening === "straight" ? "straight" : variant.turn === "winder" ? "winder" : "landing";
+  const fields = PREVIEW_FIELD_MATRIX[variant.mode]?.[measurementMode]?.[shape] || [];
+  const sameTread = project?.treadMode?.sameTread !== false;
+  return fields.flatMap((code) => {
+    if (code === "tread") return sameTread ? ["b"] : ["b1", "b2"];
+    if (code === "tread1") return sameTread ? ["b"] : ["b1"];
+    return [code];
+  });
+}
+
+function previewFieldValues(measurement, project) {
+  const p = project?.params || {};
+  const treadMode = project?.treadMode || {};
+  const sameTread = treadMode.sameTread !== false;
+  const b = previewNumber(p.b, p.treadDepth, treadMode.b1, measurement.tread_depth_mm, 250);
+  const b1 = sameTread ? b : previewNumber(p.b1, p.treadDepthFlight1, treadMode.b1, measurement.tread_depth_mm, b);
+  const b2 = sameTread ? b : previewNumber(p.b2, p.treadDepthFlight2, treadMode.b2, measurement.tread_depth_mm, b);
+  const h = previewNumber(p.h, p.riserHeight, measurement.riser_height_mm, 180);
+  const values = {
+    M1: previewNumber(p.M1, p.firstFlightLength, measurement.flight1_length_mm),
+    B1: previewNumber(p.B1, p.firstFlightWidth, measurement.flight1_width_mm),
+    N1: previewNumber(p.N1, p.firstFlightSteps, measurement.flight1_steps_count),
+    M2: previewNumber(p.M2, p.secondFlightLength, measurement.flight2_length_mm),
+    B2: previewNumber(p.B2, p.secondFlightWidth, measurement.flight2_width_mm),
+    N2: previewNumber(p.N2, p.secondFlightSteps, measurement.flight2_steps_count),
+    ZL: previewNumber(p.ZL, p.turnLength, measurement.corner_zone_length_mm),
+    ZW: previewNumber(p.ZW, p.turnWidth, measurement.corner_zone_width_mm),
+    ZN: previewNumber(p.ZN, p.winderSteps, measurement.winder_steps_count),
+    H: previewNumber(p.H, p.height, measurement.height_clean_to_clean_mm),
+    T: previewNumber(p.T, p.slabThickness, measurement.slab_thickness_mm),
+    L: previewNumber(p.L, p.openingLength, measurement.opening_length_mm),
+    W: previewNumber(p.W, p.openingWidth, measurement.opening_width_mm),
+    h,
+    b,
+    b1,
+    b2,
+  };
+  const variant = previewVariant(project);
+  if (variant.mode === "ready") {
+    values.M1 = previewNumber(values.N1 && b1 ? values.N1 * b1 : null, values.M1);
+    values.M2 = previewNumber(values.N2 && b2 ? values.N2 * b2 : null, values.M2);
+  }
+  return values;
+}
+
+function previewDimensionMarkup(measurement, project) {
+  const variant = previewVariant(project);
+  const values = previewFieldValues(measurement, project);
+  const rows = previewMatrixFields(project, variant).map((code) => {
+    const value = values[code];
+    if (!value) return "";
+    const suffix = ["N1", "N2", "ZN"].includes(code) ? " шт" : " мм";
+    return previewRow(PREVIEW_FIELD_LABELS[code] || code, `${Math.round(value)}${suffix}`);
+  }).filter(Boolean);
+  return rows.length ? rows.join("") : `<p class="muted-text">Рабочие размеры не заполнены.</p>`;
+}
+
 function photoPublicUrl(photo) {
   const path = String(photo?.file_path || "").trim();
   if (!path) return "";
@@ -892,13 +1017,7 @@ function renderPreview() {
 
       <section class="preview-section">
         <h3>Размеры и схема</h3>
-        ${previewRow("Высота чистый-чистый", m.height_clean_to_clean_mm ? `${m.height_clean_to_clean_mm} мм` : "")}
-        ${previewRow("Толщина перекрытия", m.slab_thickness_mm ? `${m.slab_thickness_mm} мм` : "")}
-        ${previewRow("Проём L × W", [m.opening_length_mm, m.opening_width_mm].filter(Boolean).join(" × "))}
-        ${previewRow("1 марш M1 × B1", [m.flight1_length_mm, m.flight1_width_mm].filter(Boolean).join(" × "))}
-        ${previewRow("2 марш M2 × B2", [m.flight2_length_mm, m.flight2_width_mm].filter(Boolean).join(" × "))}
-        ${previewRow("Зона поворота", [m.corner_zone_length_mm, m.corner_zone_width_mm].filter(Boolean).join(" × "))}
-        ${previewRow("N1 / N2 / ZN", [m.flight1_steps_count, m.flight2_steps_count, m.winder_steps_count].filter(Boolean).join(" / "))}
+        ${previewDimensionMarkup(m, project)}
         <div class="preview-scheme">${m.drawing_svg || `<span class="muted-text">Схема не сохранена.</span>`}</div>
         ${project.type ? `<p class="muted-text small">Тип схемы: ${escapeHtml(project.type)}</p>` : ""}
       </section>

@@ -6,6 +6,8 @@ const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
 const state = { user: null, profile: null, measurements: [], selected: null, photos: [] };
+const DEFAULT_STEP_DEPTH = 250;
+const DEFAULT_RISER = 180;
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -267,13 +269,22 @@ function productionDims(measurement, project) {
   };
 }
 
+function productionTreads(measurement, project) {
+  const p = project.params || {};
+  const treadMode = project.treadMode || {};
+  const common = pickNumber(p.b, p.treadDepth, treadMode.b1, measurement.tread_depth_mm, DEFAULT_STEP_DEPTH) || DEFAULT_STEP_DEPTH;
+  const b1 = treadMode.sameTread === false ? (pickNumber(p.b1, p.treadDepthFlight1, treadMode.b1, common) || common) : common;
+  const b2 = treadMode.sameTread === false ? (pickNumber(p.b2, p.treadDepthFlight2, treadMode.b2, common) || common) : common;
+  return { common, b1, b2, separate: treadMode.sameTread === false };
+}
+
 function collectIssues(measurement, project, finish, svg) {
   const p = project.params || {};
   const dims = productionDims(measurement, project);
-  const treadMode = project.treadMode || {};
-  const b1 = treadMode.sameTread === false ? treadMode.b1 : (p.b || p.treadDepth || p.b1 || treadMode.b1 || measurement.tread_depth_mm);
-  const b2 = treadMode.sameTread === false ? treadMode.b2 : (p.b || p.treadDepth || p.b2 || treadMode.b2 || measurement.tread_depth_mm);
-  const h = pickNumber(p.h, p.riserHeight, measurement.riser_height_mm);
+  const tread = productionTreads(measurement, project);
+  const b1 = tread.b1;
+  const b2 = tread.b2;
+  const h = pickNumber(p.h, p.riserHeight, measurement.riser_height_mm, DEFAULT_RISER);
   const v = productionVariant(project);
   const detailed = productionMeasurementMode(project) === "detailed";
   const missing = [];
@@ -300,7 +311,6 @@ function collectIssues(measurement, project, finish, svg) {
     addIf("H", dims.H);
     addIf("T", dims.T);
   } else {
-    addIf("M1", dims.M1);
     addIf("B1", dims.B1);
     addIf("N1", dims.N1);
     if (detailed) {
@@ -308,15 +318,10 @@ function collectIssues(measurement, project, finish, svg) {
       addIf("h", h);
     }
     if (v.opening !== "straight") {
-      addIf("M2", dims.M2);
       addIf("B2", dims.B2);
       addIf("N2", dims.N2);
       if (v.turn === "winder") addIf("ZN", dims.ZN);
-      if (detailed) {
-        addIf("b/b2", b2);
-        addIf("ZL", dims.ZL);
-        addIf("ZW", dims.ZW);
-      }
+      if (detailed) addIf("b/b2", b2);
     }
   }
   if (v.mode === "ready" && detailed && !(finish.steps?.length || finish.landings?.length || finish.boots?.length)) {
@@ -333,28 +338,41 @@ function renderIssues(issues) {
 function renderDimensions(measurement, project) {
   const p = project.params || {};
   const dims = productionDims(measurement, project);
-  const treadMode = project.treadMode || {};
   const detailed = productionMeasurementMode(project) === "detailed";
   const v = productionVariant(project);
-  const b1 = treadMode.sameTread === false ? treadMode.b1 : (p.b || p.treadDepth || p.b1 || treadMode.b1 || measurement.tread_depth_mm);
-  const b2 = treadMode.sameTread === false ? treadMode.b2 : (p.b || p.treadDepth || p.b2 || treadMode.b2 || measurement.tread_depth_mm);
-  const rows = [
-    v.mode === "empty" || detailed ? dimKv("H — высота от пола до пола", dims.H) : "",
-    v.mode === "empty" ? dimKv("T — толщина перекрытия/проёма", dims.T) : "",
-    dimKv("L — длина проёма", dims.L),
-    dimKv("W — ширина проёма", dims.W),
-    dimKv("Марш 1 M1", dims.M1),
-    dimKv("Марш 1 B1", dims.B1),
-    v.mode === "ready" && isPositiveNumber(dims.N1) ? countKv("Марш 1: N1", `${dims.N1} шт`) : "",
-    detailed ? dimKv("Проступь b1", b1) : "",
-    v.opening !== "straight" ? dimKv("Марш 2 M2", dims.M2) : "",
-    v.opening !== "straight" ? dimKv("Марш 2 B2", dims.B2) : "",
-    v.mode === "ready" && v.opening !== "straight" && isPositiveNumber(dims.N2) ? countKv("Марш 2: N2", `${dims.N2} шт`) : "",
-    detailed && v.opening !== "straight" ? dimKv("Проступь b2", b2) : "",
-    v.opening !== "straight" && detailed ? dimKv("Поворот ZL", dims.ZL) : "",
-    v.opening !== "straight" && detailed ? dimKv("Поворот ZW", dims.ZW) : "",
-    v.mode === "ready" && v.turn === "winder" && isPositiveNumber(dims.ZN) ? countKv("Забежные: ZN", `${dims.ZN} шт`) : "",
-  ].filter(Boolean);
+  const tread = productionTreads(measurement, project);
+  const h = pickNumber(p.h, p.riserHeight, measurement.riser_height_mm, DEFAULT_RISER);
+  let rows = [];
+  if (v.mode === "empty") {
+    rows = v.opening === "straight" ? [
+      dimKv("L — длина проёма", dims.L),
+      dimKv("W — ширина проёма", dims.W),
+      dimKv("H — высота от пола до пола", dims.H),
+      dimKv("T — толщина перекрытия/проёма", dims.T),
+    ] : [
+      dimKv("Марш 1 M1", dims.M1),
+      dimKv("Марш 1 B1", dims.B1),
+      dimKv("Марш 2 M2", dims.M2),
+      dimKv("Марш 2 B2", dims.B2),
+      dimKv("Поворот ZL", dims.ZL),
+      dimKv("Поворот ZW", dims.ZW),
+      dimKv("H — высота от пола до пола", dims.H),
+      dimKv("T — толщина перекрытия/проёма", dims.T),
+    ];
+  } else {
+    rows = [
+      dimKv("Марш 1 B1", dims.B1),
+      isPositiveNumber(dims.N1) ? countKv("Марш 1: N1", `${dims.N1} шт`) : "",
+      v.opening !== "straight" ? dimKv("Марш 2 B2", dims.B2) : "",
+      v.opening !== "straight" && isPositiveNumber(dims.N2) ? countKv("Марш 2: N2", `${dims.N2} шт`) : "",
+      v.turn === "winder" && isPositiveNumber(dims.ZN) ? countKv("Забежные: ZN", `${dims.ZN} шт`) : "",
+      detailed ? dimKv("Подступёнок h", h) : "",
+      detailed && tread.separate ? dimKv("Проступь b1", tread.b1) : "",
+      detailed && tread.separate && v.opening !== "straight" ? dimKv("Проступь b2", tread.b2) : "",
+      detailed && !tread.separate ? dimKv("Проступь b", tread.common) : "",
+    ];
+  }
+  rows = rows.filter(Boolean);
   return rows.length ? `<div class="production-grid">${rows.join("")}</div>` : `<p class="production-empty-line">Рабочие размеры не заполнены.</p>`;
 }
 

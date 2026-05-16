@@ -685,7 +685,6 @@ function getRequiredMeasurementErrors() {
     needProject("H", "H", "height_clean_to_clean_mm");
     needProject("T", "T", "slab_thickness_mm");
   } else {
-    needProject("M1", "M1", "flight1_length_mm");
     needProject("B1", "B1", "flight1_width_mm");
     if (isReady) needProject("N1", "N1", "flight1_steps_count");
     if (isDetailed) {
@@ -693,19 +692,12 @@ function getRequiredMeasurementErrors() {
       needProject("h", "h", "riser_height_mm");
     }
     if (!isStraight) {
-      needProject("M2", "M2", "flight2_length_mm");
       needProject("B2", "B2", "flight2_width_mm");
       if (isReady) {
         needProject("N2", "N2", "flight2_steps_count");
         if (isWinder) needProject("ZN", "ZN", "winder_steps_count");
       }
-      if (isDetailed) {
-        if (!(positiveProjectValue(project, "b", "tread_depth_mm") || positiveProjectValue(project, "b2", "tread_depth_flight2_mm"))) errors.push("b/b2");
-      }
-      if (isDetailed) {
-        needProject("ZL", "ZL", "corner_zone_length_mm");
-        needProject("ZW", "ZW", "corner_zone_width_mm");
-      }
+      if (isDetailed && !(positiveProjectValue(project, "b", "tread_depth_mm") || positiveProjectValue(project, "b2", "tread_depth_flight2_mm"))) errors.push("b/b2");
     }
   }
   return [...new Set(errors)];
@@ -791,6 +783,98 @@ function previewRow(label, value) {
   return `<div class="preview-row"><span>${escapeHtml(label)}</span><b>${previewValue(value)}</b></div>`;
 }
 
+function projectVariantInfo(project) {
+  const type = String(project?.type || "");
+  return {
+    type,
+    mode: !type || type.startsWith("empty") ? "empty" : "ready",
+    opening: type.includes("straight") ? "straight" : type.includes("_u_") ? "u" : type.includes("_l_") ? "l" : "",
+    turn: type.includes("winder") ? "winder" : type.includes("landing") ? "landing" : "",
+  };
+}
+
+function pickPreviewNumber(measurement, project, field, ...paramKeys) {
+  const params = project?.params || {};
+  for (const key of paramKeys) {
+    const value = Number(params[key] ?? 0);
+    if (Number.isFinite(value) && value > 0) return value;
+  }
+  const fallback = Number(measurement?.[field] ?? 0);
+  return Number.isFinite(fallback) && fallback > 0 ? fallback : null;
+}
+
+function previewMm(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? `${Math.round(n)} мм` : "";
+}
+
+function previewCount(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? `${Math.round(n)} шт` : "";
+}
+
+function previewTreads(measurement, project) {
+  const params = project?.params || {};
+  const treadMode = project?.treadMode || {};
+  const common = Number(params.b || params.treadDepth || treadMode.b1 || measurement?.tread_depth_mm || 250) || 250;
+  const b1 = treadMode.sameTread === false ? Number(params.b1 || params.treadDepthFlight1 || treadMode.b1 || common) || common : common;
+  const b2 = treadMode.sameTread === false ? Number(params.b2 || params.treadDepthFlight2 || treadMode.b2 || common) || common : common;
+  return { common, b1, b2, separate: treadMode.sameTread === false };
+}
+
+function previewDimensionRows(measurement, project) {
+  const info = projectVariantInfo(project);
+  const detailed = projectMeasurementMode(project) === "detailed";
+  const rows = [];
+  const add = (label, value) => rows.push(previewRow(label, value));
+  const dims = {
+    L: pickPreviewNumber(measurement, project, "opening_length_mm", "L", "openingLength"),
+    W: pickPreviewNumber(measurement, project, "opening_width_mm", "W", "openingWidth"),
+    H: pickPreviewNumber(measurement, project, "height_clean_to_clean_mm", "H", "height"),
+    T: pickPreviewNumber(measurement, project, "slab_thickness_mm", "T", "slabThickness"),
+    M1: pickPreviewNumber(measurement, project, "flight1_length_mm", "M1", "firstFlightLength"),
+    B1: pickPreviewNumber(measurement, project, "flight1_width_mm", "B1", "firstFlightWidth"),
+    N1: pickPreviewNumber(measurement, project, "flight1_steps_count", "N1", "firstFlightSteps"),
+    M2: pickPreviewNumber(measurement, project, "flight2_length_mm", "M2", "secondFlightLength"),
+    B2: pickPreviewNumber(measurement, project, "flight2_width_mm", "B2", "secondFlightWidth"),
+    N2: pickPreviewNumber(measurement, project, "flight2_steps_count", "N2", "secondFlightSteps"),
+    ZL: pickPreviewNumber(measurement, project, "corner_zone_length_mm", "ZL", "turnLength"),
+    ZW: pickPreviewNumber(measurement, project, "corner_zone_width_mm", "ZW", "turnWidth"),
+    ZN: pickPreviewNumber(measurement, project, "winder_steps_count", "ZN", "winderSteps"),
+    h: pickPreviewNumber(measurement, project, "riser_height_mm", "h", "riserHeight"),
+  };
+  if (info.mode === "empty") {
+    if (info.opening === "straight") {
+      add("Проём L × W", [dims.L, dims.W].filter(Boolean).join(" × "));
+    } else {
+      add("1 марш M1 × B1", [dims.M1, dims.B1].filter(Boolean).join(" × "));
+      add("2 марш M2 × B2", [dims.M2, dims.B2].filter(Boolean).join(" × "));
+      add("Зона поворота ZL × ZW", [dims.ZL, dims.ZW].filter(Boolean).join(" × "));
+    }
+    add("Высота H", previewMm(dims.H));
+    add("Толщина T", previewMm(dims.T));
+    return rows.join("");
+  }
+  add("Марш 1 B1", previewMm(dims.B1));
+  add("Марш 1 N1", previewCount(dims.N1));
+  if (info.opening !== "straight") {
+    add("Марш 2 B2", previewMm(dims.B2));
+    add("Марш 2 N2", previewCount(dims.N2));
+  }
+  if (info.turn === "winder") add("Забежные ZN", previewCount(dims.ZN));
+  if (detailed) {
+    const tread = previewTreads(measurement, project);
+    add("Подступёнок h", previewMm(dims.h || 180));
+    if (tread.separate) {
+      add("Проступь b1", previewMm(tread.b1));
+      if (info.opening !== "straight") add("Проступь b2", previewMm(tread.b2));
+    } else {
+      add("Проступь b", previewMm(tread.common));
+    }
+  }
+  return rows.join("");
+}
+
 function photoPublicUrl(photo) {
   const path = String(photo?.file_path || "").trim();
   if (!path) return "";
@@ -868,13 +952,7 @@ function renderPreview() {
 
       <section class="preview-section">
         <h3>Размеры и схема</h3>
-        ${previewRow("Высота чистый-чистый", m.height_clean_to_clean_mm ? `${m.height_clean_to_clean_mm} мм` : "")}
-        ${previewRow("Толщина перекрытия", m.slab_thickness_mm ? `${m.slab_thickness_mm} мм` : "")}
-        ${previewRow("Проём L × W", [m.opening_length_mm, m.opening_width_mm].filter(Boolean).join(" × "))}
-        ${previewRow("1 марш M1 × B1", [m.flight1_length_mm, m.flight1_width_mm].filter(Boolean).join(" × "))}
-        ${previewRow("2 марш M2 × B2", [m.flight2_length_mm, m.flight2_width_mm].filter(Boolean).join(" × "))}
-        ${previewRow("Зона поворота", [m.corner_zone_length_mm, m.corner_zone_width_mm].filter(Boolean).join(" × "))}
-        ${previewRow("N1 / N2 / ZN", [m.flight1_steps_count, m.flight2_steps_count, m.winder_steps_count].filter(Boolean).join(" / "))}
+        ${previewDimensionRows(m, project)}
         <div class="preview-scheme">${m.drawing_svg || `<span class="muted-text">Схема не сохранена.</span>`}</div>
         ${project.type ? `<p class="muted-text small">Тип схемы: ${escapeHtml(project.type)}</p>` : ""}
       </section>

@@ -650,6 +650,71 @@ function projectMeasurementMode(project) {
   return normalizeMeasurementMode(project?.measurementMode || getCurrentMeasurementMode());
 }
 
+const REQUIRED_FIELD_MATRIX = {
+  empty: {
+    simple: {
+      straight: ["L", "W", "H", "T"],
+      turn: ["M1", "B1", "M2", "B2", "ZL", "ZW", "H", "T"],
+    },
+    detailed: {
+      straight: ["L", "W", "H", "T"],
+      turn: ["M1", "B1", "M2", "B2", "ZL", "ZW", "H", "T"],
+    },
+  },
+  ready: {
+    simple: {
+      straight: ["B1", "N1"],
+      landing: ["B1", "N1", "B2", "N2"],
+      winder: ["B1", "N1", "B2", "N2", "ZN"],
+    },
+    detailed: {
+      straight: ["M1", "B1", "N1", "h", "tread1"],
+      landing: ["M1", "B1", "N1", "M2", "B2", "N2", "ZL", "ZW", "h", "tread"],
+      winder: ["M1", "B1", "N1", "M2", "B2", "N2", "ZL", "ZW", "ZN", "h", "tread"],
+    },
+  },
+};
+
+const REQUIRED_FIELD_FALLBACKS = {
+  L: ["L", "opening_length_mm"],
+  W: ["W", "opening_width_mm"],
+  H: ["H", "height_clean_to_clean_mm"],
+  T: ["T", "slab_thickness_mm"],
+  M1: ["M1", "flight1_length_mm"],
+  B1: ["B1", "flight1_width_mm"],
+  N1: ["N1", "flight1_steps_count"],
+  M2: ["M2", "flight2_length_mm"],
+  B2: ["B2", "flight2_width_mm"],
+  N2: ["N2", "flight2_steps_count"],
+  ZL: ["ZL", "corner_zone_length_mm"],
+  ZW: ["ZW", "corner_zone_width_mm"],
+  ZN: ["ZN", "winder_steps_count"],
+  h: ["h", "riser_height_mm"],
+  b: ["b", "tread_depth_mm"],
+  b1: ["b1", "tread_depth_flight1_mm"],
+  b2: ["b2", "tread_depth_flight2_mm"],
+};
+
+function matrixShape(isStraight, isWinder) {
+  if (isStraight) return "straight";
+  return isWinder ? "winder" : "landing";
+}
+
+function requiredMatrixFields(project, mode, measurementMode, shape) {
+  const sameTread = project?.treadMode?.sameTread !== false;
+  const fields = REQUIRED_FIELD_MATRIX[mode]?.[measurementMode]?.[shape] || REQUIRED_FIELD_MATRIX[mode]?.[measurementMode]?.turn || [];
+  return fields.flatMap((code) => {
+    if (code === "tread") return sameTread ? ["b"] : ["b1", "b2"];
+    if (code === "tread1") return sameTread ? ["b"] : ["b1"];
+    return [code];
+  });
+}
+
+function hasRequiredMatrixValue(project, code) {
+  const [projectKey, fallbackName] = REQUIRED_FIELD_FALLBACKS[code] || [code, ""];
+  return positiveProjectValue(project, projectKey, fallbackName);
+}
+
 function getRequiredMeasurementErrors() {
   ensureDynamicMeasurementFields();
   const form = $("#measurement-form");
@@ -660,54 +725,13 @@ function getRequiredMeasurementErrors() {
   const mode = type.startsWith("empty") || !type ? "empty" : "ready";
   const isStraight = type ? type.includes("straight") : String(form?.opening_type?.value || "").includes("Прям");
   const isWinder = type.includes("winder");
-  const isDetailed = measurementMode === "detailed";
-  const isReady = mode === "ready";
   const errors = [];
-  const needProject = (label, key, field) => {
-    if (!positiveProjectValue(project, key, field)) errors.push(label);
-  };
 
   if (!type) errors.push("схема");
   if (!String(form?.drawing_svg?.value || state.selected?.drawing_svg || "").trim()) errors.push("сохранённая схема/SVG");
-  // H — высота чистый-чистый — справочное поле: не блокирует простой режим.
-  if (mode === "empty" && isStraight) {
-    needProject("L", "L", "opening_length_mm");
-    needProject("W", "W", "opening_width_mm");
-    needProject("H", "H", "height_clean_to_clean_mm");
-    needProject("T", "T", "slab_thickness_mm");
-  } else if (mode === "empty") {
-    needProject("M1", "M1", "flight1_length_mm");
-    needProject("B1", "B1", "flight1_width_mm");
-    needProject("M2", "M2", "flight2_length_mm");
-    needProject("B2", "B2", "flight2_width_mm");
-    needProject("ZL", "ZL", "corner_zone_length_mm");
-    needProject("ZW", "ZW", "corner_zone_width_mm");
-    needProject("H", "H", "height_clean_to_clean_mm");
-    needProject("T", "T", "slab_thickness_mm");
-  } else {
-    needProject("M1", "M1", "flight1_length_mm");
-    needProject("B1", "B1", "flight1_width_mm");
-    if (isReady) needProject("N1", "N1", "flight1_steps_count");
-    if (isDetailed) {
-      if (!(positiveProjectValue(project, "b", "tread_depth_mm") || positiveProjectValue(project, "b1", "tread_depth_flight1_mm"))) errors.push("b/b1");
-      needProject("h", "h", "riser_height_mm");
-    }
-    if (!isStraight) {
-      needProject("M2", "M2", "flight2_length_mm");
-      needProject("B2", "B2", "flight2_width_mm");
-      if (isReady) {
-        needProject("N2", "N2", "flight2_steps_count");
-        if (isWinder) needProject("ZN", "ZN", "winder_steps_count");
-      }
-      if (isDetailed) {
-        if (!(positiveProjectValue(project, "b", "tread_depth_mm") || positiveProjectValue(project, "b2", "tread_depth_flight2_mm"))) errors.push("b/b2");
-      }
-      if (isDetailed) {
-        needProject("ZL", "ZL", "corner_zone_length_mm");
-        needProject("ZW", "ZW", "corner_zone_width_mm");
-      }
-    }
-  }
+  requiredMatrixFields(project, mode, measurementMode, matrixShape(isStraight, isWinder)).forEach((code) => {
+    if (!hasRequiredMatrixValue(project, code)) errors.push(code);
+  });
   return [...new Set(errors)];
 }
 

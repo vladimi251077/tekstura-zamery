@@ -663,21 +663,45 @@
     </details>`;
   }
 
+  const FIELD_MATRIX = {
+    empty: {
+      simple: {
+        straight: ["L", "W", "H", "T"],
+        turn: ["M1", "B1", "M2", "B2", "ZL", "ZW", "H", "T"],
+      },
+      detailed: {
+        straight: ["L", "W", "H", "T"],
+        turn: ["M1", "B1", "M2", "B2", "ZL", "ZW", "H", "T"],
+      },
+    },
+    ready: {
+      simple: {
+        straight: ["B1", "N1"],
+        landing: ["B1", "N1", "B2", "N2"],
+        winder: ["B1", "N1", "B2", "N2", "ZN"],
+      },
+      detailed: {
+        straight: ["M1", "B1", "N1", "h", "tread1", "H"],
+        landing: ["M1", "B1", "N1", "M2", "B2", "N2", "ZL", "ZW", "h", "tread", "H"],
+        winder: ["M1", "B1", "N1", "M2", "B2", "N2", "ZL", "ZW", "ZN", "h", "tread", "H"],
+      },
+    },
+  };
+
+  function expandMatrixFields(fields) {
+    return fields.flatMap((code) => {
+      if (code === "tread") return projectState?.treadMode?.sameTread !== false ? ["b"] : ["b1", "b2"];
+      if (code === "tread1") return projectState?.treadMode?.sameTread !== false ? ["b"] : ["b1"];
+      return [code];
+    });
+  }
+
   function visibleParams() {
     const v = variant();
-    if (!isDetailedMode()) {
-      if (v.key === "empty_straight") return ["L", "W", "H", "T"];
-      if (v.mode === "empty") return ["M1", "B1", "M2", "B2", "ZL", "ZW", "H", "T"];
-      if (v.key === "ready_straight") return ["B1", "N1"];
-      if (v.turn === "winder") return ["B1", "N1", "B2", "N2", "ZN"];
-      return ["B1", "N1", "B2", "N2"];
-    }
-    const tread = projectState?.treadMode?.sameTread !== false ? ["b"] : ["b1", "b2"];
-    const withOptionalH = (items) => [...items, "H"];
-    if (v.key === "empty_straight") return withOptionalH(["L", "W"]);
-    if (v.mode === "empty") return withOptionalH(["M1", "B1", "M2", "B2", "ZL", "ZW"]);
-    if (v.key === "ready_straight") return withOptionalH(["M1", "B1", "N1", "h", ...(projectState?.treadMode?.sameTread !== false ? ["b"] : ["b1"])]);
-    return withOptionalH(["M1", "B1", "N1", "M2", "B2", "N2", "ZL", "ZW", "ZN", "h", ...tread]);
+    const mode = isDetailedMode() ? "detailed" : "simple";
+    const shape = v.opening === "straight" ? "straight" : v.turn === "winder" ? "winder" : "landing";
+    const fields = FIELD_MATRIX[v.mode]?.[mode]?.[shape] || FIELD_MATRIX[v.mode]?.[mode]?.turn || [];
+    return expandMatrixFields(fields);
   }
 
   const FIELD_META = {

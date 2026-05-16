@@ -49,37 +49,57 @@
         </section>
 
         <section id="main-view" class="hidden">
-          <div class="grid stats-grid hidden" aria-hidden="true">
-            <div class="card stat"><b id="stat-drafts">0</b><span>Черновики</span></div>
-            <div class="card stat"><b id="stat-review">0</b><span>На проверке</span></div>
-            <div class="card stat"><b id="stat-ready">0</b><span>Готовые</span></div>
-            <div class="card stat"><b id="stat-archive">0</b><span>Архив</span></div>
-          </div>
-
-          <div class="toolbar">
+          <div class="toolbar workspace-toolbar">
             <button id="new-measurement-btn" class="btn primary">+ Новый замер</button>
-            <button id="refresh-btn" class="btn secondary">Обновить</button>
-            <select id="status-filter">
-              <option value="active">Рабочие</option>
-              <option value="all">Все</option>
-              <option value="Черновик">Черновик</option>
-              <option value="На проверке">На проверке</option>
-              <option value="Готовый замер">Готовый замер</option>
-              <option value="Архив">Архив</option>
-            </select>
+            <button id="open-measurements-btn" class="btn secondary">Замеры</button>
+            <button id="refresh-btn" class="btn ghost">Обновить</button>
           </div>
 
-          <div class="layout">
-            <aside class="card list-panel">
-              <h2>Замеры</h2>
-              <div id="measurements-list" class="measurements-list"></div>
-            </aside>
+          <section id="measurements-screen" class="measurements-screen hidden" aria-label="Замеры">
+            <div class="measurements-screen-card card">
+              <div class="measurements-screen-head">
+                <div>
+                  <div class="eyebrow">Навигация</div>
+                  <h2>Замеры</h2>
+                  <p class="muted-text">Поиск, фильтр статуса и чистый просмотр без редактирования.</p>
+                </div>
+                <button id="close-measurements-btn" type="button" class="btn ghost">Закрыть</button>
+              </div>
 
+              <div class="measurements-controls">
+                <label class="sr-only" for="measurement-search">Поиск замера</label>
+                <input id="measurement-search" type="search" placeholder="Поиск: номер, клиент, телефон, адрес" autocomplete="off" />
+                <label class="sr-only" for="status-filter">Фильтр статуса</label>
+                <select id="status-filter">
+                  <option value="active">Рабочие</option>
+                  <option value="all">Все</option>
+                  <option value="Черновик">Черновик</option>
+                  <option value="На проверке">На проверке</option>
+                  <option value="Нужны уточнения">Нужны уточнения</option>
+                  <option value="Готовый замер">Готовый замер</option>
+                  <option value="Архив">Архив</option>
+                </select>
+              </div>
+
+              <div class="measurements-summary" aria-label="Статусы замеров">
+                <span><b id="stat-drafts">0</b> Черновики</span>
+                <span><b id="stat-review">0</b> На проверке</span>
+                <span><b id="stat-ready">0</b> Готовые</span>
+                <span><b id="stat-archive">0</b> Архив</span>
+              </div>
+
+              <div id="measurements-list" class="measurements-list"></div>
+            </div>
+          </section>
+
+          <div class="layout workspace-layout">
             <section class="card detail-panel">
               <div id="empty-detail" class="empty-state">
                 <h2>Выберите замер</h2>
                 <p>Или создайте новый замер для пустого проёма, каркаса или бетонной лестницы.</p>
               </div>
+
+              <section id="measurement-preview" class="measurement-preview hidden" aria-live="polite"></section>
 
               <form id="measurement-form" class="hidden">
                 <div class="form-head">
@@ -261,7 +281,7 @@
                 <details id="technical-actions" class="technical-actions hidden">
                   <summary>Технические действия</summary>
                   <div class="archive-actions">
-                    <a class="btn secondary" href="./production.html" target="_blank" rel="noopener">Задания производству</a>
+                    <a id="production-link" class="btn secondary" href="./production.html" target="_blank" rel="noopener">Для изготовителя</a>
                     <button id="download-json-btn" type="button" class="btn secondary">Скачать JSON</button>
                     <button id="download-csv-btn" type="button" class="btn secondary">Скачать CSV</button>
                     <button id="archive-btn" type="button" class="btn warning-btn">Перевести в архив</button>

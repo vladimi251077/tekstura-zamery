@@ -590,8 +590,8 @@
     const n1 = intField("flight1_steps_count", 0);
     const n2 = intField("flight2_steps_count", 0);
     const forceSimpleReady = !isDetailedMode();
-    if ((forceSimpleReady || projectState.autoCalc.flight1Length) && tread.b1 > 0) writeField("flight1_length_mm", n1 > 0 ? n1 * tread.b1 : "", true);
-    if ((forceSimpleReady || projectState.autoCalc.flight2Length) && tread.b2 > 0) writeField("flight2_length_mm", n2 > 0 ? n2 * tread.b2 : "", true);
+    if ((forceSimpleReady || projectState.autoCalc.flight1Length) && tread.b1 > 0 && n1 > 0) writeField("flight1_length_mm", n1 * tread.b1, true);
+    if ((forceSimpleReady || projectState.autoCalc.flight2Length) && tread.b2 > 0 && n2 > 0) writeField("flight2_length_mm", n2 * tread.b2, true);
   }
 
   function getSectionState() {

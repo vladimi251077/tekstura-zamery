@@ -791,15 +791,33 @@ function previewRow(label, value) {
   return `<div class="preview-row"><span>${escapeHtml(label)}</span><b>${previewValue(value)}</b></div>`;
 }
 
+function photoPublicUrl(photo) {
+  const path = String(photo?.file_path || "").trim();
+  if (!path) return "";
+  try {
+    return supabaseClient.storage.from("measurement-photos").getPublicUrl(path).data?.publicUrl || "";
+  } catch (error) {
+    console.warn("Не удалось получить public URL фото", error);
+    return "";
+  }
+}
+
 function previewPhotoMarkup() {
   const photos = selectedPhotos();
   if (!photos.length) return `<p class="muted-text">Фото ещё не добавлены.</p>`;
-  return `<div class="preview-photos">${photos.map((photo) => `
+  return `<div class="preview-photos">${photos.map((photo) => {
+    const type = photo.photo_type || "Фото";
+    const publicUrl = photoPublicUrl(photo);
+    const media = publicUrl
+      ? `<img src="${escapeHtml(publicUrl)}" alt="${escapeHtml(type)}" loading="lazy" />`
+      : `<div class="preview-photo-thumb">Фото</div>`;
+    return `
     <div class="preview-photo-card">
-      <div class="preview-photo-thumb">Фото</div>
-      <b>${previewValue(photo.photo_type, "Фото")}</b>
+      <div class="preview-photo-media">${media}</div>
+      <b>${previewValue(type, "Фото")}</b>
       <span>${previewValue(photo.file_path, "")}</span>
-    </div>`).join("")}</div>`;
+    </div>`;
+  }).join("")}</div>`;
 }
 
 function previewClarificationMarkup(m) {

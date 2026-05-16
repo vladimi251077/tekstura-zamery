@@ -1,6 +1,6 @@
 (() => {
   const ROOT_ID = "drawing-bridge-root";
-  const STYLE_ID = "drawing-bridge-style-v14";
+  const STYLE_ID = "drawing-bridge-style-v15";
   const SECTION_STORAGE_KEY = "tekstura:drawing-bridge:sections:v15-simple";
 
   const DESKTOP_VIEW = { w: 1100, h: 760 };
@@ -127,7 +127,10 @@
       #${ROOT_ID}{width:100%;color:#0f172a}
       #${ROOT_ID} *{box-sizing:border-box}
       .db-shell{display:grid;grid-template-columns:minmax(320px,430px) minmax(420px,1fr);gap:14px;align-items:start}
-      .db-left,.db-right{display:grid;gap:10px}
+      .db-top,.db-left,.db-right{display:grid;gap:10px}
+      .db-top{grid-column:1;grid-row:1}
+      .db-left{grid-column:1;grid-row:2}
+      .db-right{grid-column:2;grid-row:1 / span 2}
       .db-section{border:1px solid #d9e2ef;border-radius:14px;background:#fff;box-shadow:0 8px 24px rgba(15,23,42,.04);overflow:hidden}
       .db-section>summary{list-style:none;display:flex;align-items:center;gap:8px;min-height:46px;padding:0 14px;cursor:pointer;font-size:14px;font-weight:950;color:#0f172a;background:#f8fbff;border-bottom:1px solid transparent}
       .db-section>summary::-webkit-details-marker{display:none}
@@ -210,7 +213,10 @@
         body:has(.tab.active[data-tab="sizes"]) main{padding:0 2px}
         body:has(.tab.active[data-tab="sizes"]) .detail-panel.card{padding:2px!important}
         .db-shell{grid-template-columns:1fr;gap:6px}
-        .db-right{order:-1}
+        .db-top,.db-right,.db-left{grid-column:1;grid-row:auto}
+        .db-top{order:1}
+        .db-right{order:2}
+        .db-left{order:3}
         .db-section{border-radius:14px;box-shadow:none}
         .db-section>summary{padding:10px 12px}
         .db-section-body{padding:8px}
@@ -603,6 +609,7 @@
   function getSectionState() {
     const defaults = isDetailedMode()
       ? {
+          config: true,
           frame: true,
           scheme: true,
           actions: false,
@@ -617,6 +624,7 @@
           ascent: false,
           upperBalustrade: false,
           siteMarks: false,
+          config: true,
           comments: true,
           actions: false,
           walls: false,
@@ -625,9 +633,10 @@
         };
     const parsed = safeParse(localStorage.getItem(SECTION_STORAGE_KEY), {});
     const state = { ...defaults, ...parsed };
+    state.config = true;
+    state.scheme = true;
+    state.frame = true;
     if (!isDetailedMode()) {
-      state.frame = true;
-      state.scheme = true;
       state.ascent = Boolean(parsed.ascent);
       state.upperBalustrade = Boolean(parsed.upperBalustrade);
       state.siteMarks = Boolean(parsed.siteMarks);
@@ -745,23 +754,13 @@
     return `<div class="db-muted">${rows.map(escapeHtml).join("<br>")}</div>`;
   }
 
-  function frameSection() {
+  function configSection() {
     const v = variant();
     const mode = v.mode;
     const options = VARIANTS.filter((item) => item.mode === mode).map((item) => `<option value="${item.key}" ${item.key === v.key ? "selected" : ""}>${escapeHtml(item.label)}</option>`).join("");
-    const fieldCodes = visibleParams();
     const treadSwitch = mode === "ready" && isDetailedMode()
       ? `<label class="db-check"><input type="checkbox" data-tread-same ${projectState.treadMode.sameTread !== false ? "checked" : ""}/> Одинаковая проступь для всех маршей</label>`
       : "";
-    const simpleNote = isDetailedMode() ? "" : `<div class="db-muted">Простой режим: показаны только основные размеры, схема и комментарий. Детальные данные не удаляются и появятся при переключении в детальный режим.</div>`;
-    const calcRows = calculatedLengthRows();
-    const calcNote = !isDetailedMode()
-      ? (mode === "empty" || String(projectState.type || "").startsWith("empty_"))
-        ? `<div class="db-muted">Пустой проём: M1/M2 — это ручная геометрия проёма/зоны, без авторасчёта ступеней.</div>`
-        : `<div class="db-muted">Готовое основание: замерщик вводит ширину и количество ступеней, а M1/M2 считаются автоматически по N×b. Стандартная проступь для расчёта — 250 мм.</div>`
-      : (mode === "empty" || String(projectState.type || "").startsWith("empty_"))
-        ? `<div class="db-muted">Пустой проём: M1/M2 — это геометрия проёма/зоны, без авторасчёта ступеней.</div>`
-        : `<div class="db-muted">M1/M2 считаются от каркасной проступи: M1 = N1 × b, M2 = N2 × b. Вылеты готовых деталей считаются отдельно и не меняют длину каркаса.</div>`;
     return `
       <div class="db-grid">
         <div class="db-field">
@@ -777,6 +776,23 @@
         </div>
       </div>
       ${treadSwitch}
+    `;
+  }
+
+  function frameSection() {
+    const v = variant();
+    const mode = v.mode;
+    const fieldCodes = visibleParams();
+    const simpleNote = isDetailedMode() ? "" : `<div class="db-muted">Простой режим: показаны только основные размеры, схема и комментарий. Детальные данные не удаляются и появятся при переключении в детальный режим.</div>`;
+    const calcRows = calculatedLengthRows();
+    const calcNote = !isDetailedMode()
+      ? (mode === "empty" || String(projectState.type || "").startsWith("empty_"))
+        ? `<div class="db-muted">Пустой проём: M1/M2 — это ручная геометрия проёма/зоны, без авторасчёта ступеней.</div>`
+        : `<div class="db-muted">Готовое основание: замерщик вводит ширину и количество ступеней, а M1/M2 считаются автоматически по N×b. Стандартная проступь для расчёта — 250 мм.</div>`
+      : (mode === "empty" || String(projectState.type || "").startsWith("empty_"))
+        ? `<div class="db-muted">Пустой проём: M1/M2 — это геометрия проёма/зоны, без авторасчёта ступеней.</div>`
+        : `<div class="db-muted">M1/M2 считаются от каркасной проступи: M1 = N1 × b, M2 = N2 × b. Вылеты готовых деталей считаются отдельно и не меняют длину каркаса.</div>`;
+    return `
       <div class="db-grid">${fieldCodes.map(fieldControl).join("")}</div>
       ${calcRows}
       ${simpleNote}
@@ -2268,6 +2284,9 @@
         ${section("comments", "Комментарий", commentsSection())}
       `;
     root.innerHTML = `<div class="db-shell db-mode-${variant().mode} db-measurement-${measurementMode()}">
+      <div class="db-top">
+        ${section("config", "Тип объекта и схема", configSection())}
+      </div>
       <div class="db-left">
         ${leftSections}
       </div>

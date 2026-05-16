@@ -5,7 +5,7 @@ const supabaseClient = window.supabase.createClient(SUPABASE_URL, PRODUCTION_SUP
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
-const state = { user: null, profile: null, measurements: [], selected: null, photos: [] };
+const state = { user: null, profile: null, measurements: [], selected: null, photos: [], listOpen: true };
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -68,6 +68,7 @@ async function logout() {
   state.profile = null;
   state.measurements = [];
   state.selected = null;
+  state.listOpen = true;
   showApp(false);
 }
 
@@ -92,11 +93,26 @@ function canChangeProductionStatus() {
   return ["admin", "manager", "production", "prod", "цех", "производ", "montage", "монтаж"].some((part) => role.includes(part));
 }
 
+function syncProductionLayoutState() {
+  const app = $("#production-app");
+  const toggle = $("#prod-toggle-list");
+  if (!app) return;
+  const hasSelection = Boolean(state.selected);
+  app.classList.toggle("has-selection", hasSelection);
+  app.classList.toggle("list-open", state.listOpen || !hasSelection);
+  if (toggle) {
+    const expanded = state.listOpen || !hasSelection;
+    toggle.setAttribute("aria-expanded", String(expanded));
+    toggle.textContent = expanded ? "Свернуть" : "Список";
+  }
+}
+
 function showApp(isAuthed) {
   $("#production-auth").classList.toggle("hidden", isAuthed);
   $("#production-app").classList.toggle("hidden", !isAuthed);
   $("#production-logout").classList.toggle("hidden", !isAuthed);
   $("#production-user").textContent = isAuthed ? (state.user?.email || "Вошли") : "Не вошли";
+  syncProductionLayoutState();
 }
 
 async function init() {
@@ -153,6 +169,8 @@ async function selectMeasurement(id) {
   const measurement = state.measurements.find((m) => m.id === id);
   if (!measurement) return;
   state.selected = measurement;
+  state.listOpen = false;
+  syncProductionLayoutState();
   renderList();
   await loadPhotos(measurement);
   renderCard();
@@ -498,6 +516,7 @@ function renderCard() {
   const finish = parseJson(m.finish_dimensions_json, { settings: {}, steps: [], landings: [], boots: [], comments: [] });
   card.classList.remove("hidden");
   empty.classList.add("hidden");
+  syncProductionLayoutState();
   const svg = m.drawing_svg || "";
   const issues = collectIssues(m, project, finish, svg);
   const detailed = productionMeasurementMode(project) === "detailed";
@@ -544,6 +563,10 @@ function bind() {
   $("#prod-login").addEventListener("click", () => login().catch((e) => setMessage($("#prod-auth-message"), e.message, "error")));
   $("#production-logout").addEventListener("click", logout);
   $("#prod-refresh").addEventListener("click", () => loadMeasurements().catch((e) => alert(e.message)));
+  $("#prod-toggle-list")?.addEventListener("click", () => {
+    state.listOpen = !state.listOpen;
+    syncProductionLayoutState();
+  });
   $("#prod-search").addEventListener("input", renderList);
   $("#prod-list").addEventListener("click", (event) => {
     const id = event.target.closest("[data-id]")?.dataset.id;

@@ -1580,12 +1580,16 @@
     return items.join("");
   }
 
+  function isOuterSideWalled(side) {
+    return projectState.walls?.turn?.[side] === true;
+  }
+
   function renderTopBalustrade(geometry, tr) {
     const b = projectState.topBalustrade || DEFAULT_PROJECT.topBalustrade;
     if (!b.enabled) return "";
     const rect = geometry.outer;
     const sides = b.sides?.length ? b.sides : ["top"];
-    return sides.map((side) => {
+    return sides.filter((side) => !isOuterSideWalled(side)).map((side) => {
       const [a0, b0] = sideSegment(rect, side);
       const a = tr.map(a0);
       const c = tr.map(b0);

@@ -12,7 +12,7 @@
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" />
     <link rel="stylesheet" href="./styles.css?v=20260515-v14" />
-    <link rel="stylesheet" href="./production.css?v=20260515-v14" />
+    <link rel="stylesheet" href="./production.css?v=20260516-v1" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   </head>
   <body class="production-page">
@@ -46,10 +46,15 @@
         <aside class="card production-list no-print">
           <div class="production-list-head">
             <h2>Готовые замеры</h2>
-            <button id="prod-refresh" class="btn secondary">Обновить</button>
+            <div class="production-list-actions">
+              <button id="prod-toggle-list" class="btn secondary production-list-toggle" type="button" aria-expanded="true" aria-controls="prod-list-panel">Список</button>
+              <button id="prod-refresh" class="btn secondary">Обновить</button>
+            </div>
           </div>
-          <input id="prod-search" class="production-search" placeholder="Поиск: номер, клиент, адрес" />
-          <div id="prod-list" class="production-orders"></div>
+          <div id="prod-list-panel" class="production-list-panel">
+            <input id="prod-search" class="production-search" placeholder="Поиск: номер, клиент, адрес" />
+            <div id="prod-list" class="production-orders"></div>
+          </div>
         </aside>
 
         <section class="production-detail">
@@ -62,6 +67,6 @@
       </section>
     </main>
 
-    <script src="./production.js?v=20260515-v14"></script>
+    <script src="./production.js?v=20260516-v1"></script>
   </body>
 </html>

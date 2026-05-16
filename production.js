@@ -280,24 +280,29 @@ const PRODUCTION_FIELD_MATRIX = {
   },
   ready: {
     simple: {
-      straight: ["B1", "N1"],
-      landing: ["B1", "N1", "B2", "N2"],
-      winder: ["B1", "N1", "B2", "N2", "ZN"],
+      straight: ["B1", "N1", "b", "h", "M1"],
+      landing: ["B1", "N1", "B2", "N2", "b", "h", "M1", "M2"],
+      winder: ["B1", "N1", "B2", "N2", "ZN", "b", "h", "M1", "M2"],
     },
     detailed: {
-      straight: ["M1", "B1", "N1", "h", "tread1", "H"],
-      landing: ["M1", "B1", "N1", "M2", "B2", "N2", "ZL", "ZW", "h", "tread", "H"],
-      winder: ["M1", "B1", "N1", "M2", "B2", "N2", "ZL", "ZW", "ZN", "h", "tread", "H"],
+      straight: ["B1", "N1", "h", "tread1", "M1"],
+      landing: ["B1", "N1", "B2", "N2", "h", "tread", "M1", "M2"],
+      winder: ["B1", "N1", "B2", "N2", "ZN", "h", "tread", "M1", "M2"],
     },
   },
 };
 
 const PRODUCTION_REQUIRED_OVERRIDES = {
   ready: {
+    simple: {
+      straight: ["B1", "N1"],
+      landing: ["B1", "N1", "B2", "N2"],
+      winder: ["B1", "N1", "B2", "N2", "ZN"],
+    },
     detailed: {
-      straight: ["M1", "B1", "N1", "h", "tread1"],
-      landing: ["M1", "B1", "N1", "M2", "B2", "N2", "ZL", "ZW", "h", "tread"],
-      winder: ["M1", "B1", "N1", "M2", "B2", "N2", "ZL", "ZW", "ZN", "h", "tread"],
+      straight: ["B1", "N1", "h", "tread1"],
+      landing: ["B1", "N1", "B2", "N2", "h", "tread"],
+      winder: ["B1", "N1", "B2", "N2", "ZN", "h", "tread"],
     },
   },
 };
@@ -307,10 +312,10 @@ const PRODUCTION_FIELD_LABELS = {
   W: "W — ширина проёма",
   H: "H — высота от пола до пола",
   T: "T — толщина перекрытия/проёма",
-  M1: "Марш 1 M1",
+  M1: "Марш 1 M1 расчёт",
   B1: "Марш 1 B1",
   N1: "Марш 1: N1",
-  M2: "Марш 2 M2",
+  M2: "Марш 2 M2 расчёт",
   B2: "Марш 2 B2",
   N2: "Марш 2: N2",
   ZL: "Поворот ZL",
@@ -344,13 +349,21 @@ function productionFieldValues(measurement, project, dims = productionDims(measu
   const p = project.params || {};
   const treadMode = project.treadMode || {};
   const sameTread = treadMode.sameTread !== false;
-  const b = pickNumber(p.b, p.treadDepth, treadMode.b1, measurement.tread_depth_mm);
+  const b = pickNumber(p.b, p.treadDepth, treadMode.b1, measurement.tread_depth_mm, 250);
+  const b1 = sameTread ? b : pickNumber(p.b1, p.treadDepthFlight1, treadMode.b1, measurement.tread_depth_mm, b);
+  const b2 = sameTread ? b : pickNumber(p.b2, p.treadDepthFlight2, treadMode.b2, measurement.tread_depth_mm, b);
+  const h = pickNumber(p.h, p.riserHeight, measurement.riser_height_mm, 180);
+  const v = productionVariant(project);
+  const calcM1 = isPositiveNumber(dims.N1) && isPositiveNumber(b1) ? dims.N1 * b1 : dims.M1;
+  const calcM2 = isPositiveNumber(dims.N2) && isPositiveNumber(b2) ? dims.N2 * b2 : dims.M2;
   return {
     ...dims,
-    h: pickNumber(p.h, p.riserHeight, measurement.riser_height_mm),
+    M1: v.mode === "ready" ? calcM1 : dims.M1,
+    M2: v.mode === "ready" ? calcM2 : dims.M2,
+    h,
     b,
-    b1: sameTread ? b : pickNumber(p.b1, p.treadDepthFlight1, treadMode.b1, measurement.tread_depth_mm),
-    b2: sameTread ? b : pickNumber(p.b2, p.treadDepthFlight2, treadMode.b2, measurement.tread_depth_mm),
+    b1,
+    b2,
   };
 }
 

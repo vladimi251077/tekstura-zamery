@@ -668,9 +668,9 @@ const REQUIRED_FIELD_MATRIX = {
       winder: ["B1", "N1", "B2", "N2", "ZN"],
     },
     detailed: {
-      straight: ["M1", "B1", "N1", "h", "tread1"],
-      landing: ["M1", "B1", "N1", "M2", "B2", "N2", "ZL", "ZW", "h", "tread"],
-      winder: ["M1", "B1", "N1", "M2", "B2", "N2", "ZL", "ZW", "ZN", "h", "tread"],
+      straight: ["B1", "N1", "h", "tread1"],
+      landing: ["B1", "N1", "B2", "N2", "h", "tread"],
+      winder: ["B1", "N1", "B2", "N2", "ZN", "h", "tread"],
     },
   },
 };

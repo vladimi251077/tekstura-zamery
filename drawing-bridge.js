@@ -1889,7 +1889,7 @@
       const name = String(item?.name || "");
       if (kind === "steps") return ["Марш 1", "Марш 2", "Забежные"].includes(name);
       if (kind === "landings") return name === "Площадка/поворотная зона";
-      if (kind === "boots") return name.startsWith("Сапожок марш ");
+      if (kind === "boots") return name.startsWith("Сапожок марш ") || name.startsWith("Сапожки по ступеням марша ");
       return false;
     };
 
@@ -1962,30 +1962,30 @@
     }
 
     const boots = [];
-    const addBoot = (flight, side, label, length) => {
+    const addBoot = (flight, side, flightNumber, count, length) => {
       if (!finishState.settings.add_boots_by_walls || v.mode !== "ready") return;
-      if (!projectState.walls?.[flight]?.[side]) return;
+      if (!projectState.walls?.[flight]?.[side] || count <= 0) return;
       boots.push({
         id: uid("boot"),
-        name: `Сапожок ${label} ${side === "left" ? "слева" : "справа"}`,
-        count: 1,
+        name: `Сапожки по ступеням марша ${flightNumber} вдоль стены`,
+        count,
         length_mm: Math.round(Number(length) || 0),
         height_mm: 150,
         thickness_mm: 18,
         side: side === "left" ? "левый" : "правый",
         material: "МДФ",
         finish: "",
-        comment: "Автоматически по отмеченной стене",
+        comment: `Автоматически по отмеченной ${side === "left" ? "левой" : "правой"} стене, по одному сапожку на ступень`,
         source: "schema",
         auto: true,
       });
     };
 
-    addBoot("flight1", "left", "марш 1", p.firstFlightLength);
-    addBoot("flight1", "right", "марш 1", p.firstFlightLength);
+    addBoot("flight1", "left", 1, p.firstFlightSteps, depth1);
+    addBoot("flight1", "right", 1, p.firstFlightSteps, depth1);
     if (v.key !== "ready_straight") {
-      addBoot("flight2", "left", "марш 2", p.secondFlightLength);
-      addBoot("flight2", "right", "марш 2", p.secondFlightLength);
+      addBoot("flight2", "left", 2, p.secondFlightSteps, depth2);
+      addBoot("flight2", "right", 2, p.secondFlightSteps, depth2);
     }
 
     finishState.steps = [...manualSteps, ...steps];

@@ -702,7 +702,7 @@ function getRequiredMeasurementErrors() {
       if (isDetailed) {
         if (!(positiveProjectValue(project, "b", "tread_depth_mm") || positiveProjectValue(project, "b2", "tread_depth_flight2_mm"))) errors.push("b/b2");
       }
-      if (isDetailed || !isWinder) {
+      if (isDetailed) {
         needProject("ZL", "ZL", "corner_zone_length_mm");
         needProject("ZW", "ZW", "corner_zone_width_mm");
       }

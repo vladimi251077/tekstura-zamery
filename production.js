@@ -316,9 +316,6 @@ function collectIssues(measurement, project, finish, svg) {
         addIf("b/b2", b2);
         addIf("ZL", dims.ZL);
         addIf("ZW", dims.ZW);
-      } else if (v.turn !== "winder") {
-        addIf("ZL", dims.ZL);
-        addIf("ZW", dims.ZW);
       }
     }
   }
@@ -354,8 +351,8 @@ function renderDimensions(measurement, project) {
     v.opening !== "straight" ? dimKv("Марш 2 B2", dims.B2) : "",
     v.mode === "ready" && v.opening !== "straight" && isPositiveNumber(dims.N2) ? countKv("Марш 2: N2", `${dims.N2} шт`) : "",
     detailed && v.opening !== "straight" ? dimKv("Проступь b2", b2) : "",
-    v.opening !== "straight" && (detailed || v.turn !== "winder") ? dimKv("Поворот ZL", dims.ZL) : "",
-    v.opening !== "straight" && (detailed || v.turn !== "winder") ? dimKv("Поворот ZW", dims.ZW) : "",
+    v.opening !== "straight" && detailed ? dimKv("Поворот ZL", dims.ZL) : "",
+    v.opening !== "straight" && detailed ? dimKv("Поворот ZW", dims.ZW) : "",
     v.mode === "ready" && v.turn === "winder" && isPositiveNumber(dims.ZN) ? countKv("Забежные: ZN", `${dims.ZN} шт`) : "",
   ].filter(Boolean);
   return rows.length ? `<div class="production-grid">${rows.join("")}</div>` : `<p class="production-empty-line">Рабочие размеры не заполнены.</p>`;

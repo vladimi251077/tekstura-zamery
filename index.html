@@ -11,7 +11,7 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" />
-    <link rel="stylesheet" href="./styles.css?v=20260516-v16" />
+    <link rel="stylesheet" href="./styles.css?v=20260515-v14" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   </head>
   <body>
@@ -49,16 +49,36 @@
         </section>
 
         <section id="main-view" class="hidden">
-          <section id="workspace-view" class="workspace-view">
-            <div class="workspace-toolbar">
-              <button id="new-measurement-btn" class="btn primary">+ Новый замер</button>
-              <button id="open-measurements-btn" class="btn secondary">Замеры</button>
-            </div>
+          <div class="grid stats-grid hidden" aria-hidden="true">
+            <div class="card stat"><b id="stat-drafts">0</b><span>Черновики</span></div>
+            <div class="card stat"><b id="stat-review">0</b><span>На проверке</span></div>
+            <div class="card stat"><b id="stat-ready">0</b><span>Готовые</span></div>
+            <div class="card stat"><b id="stat-archive">0</b><span>Архив</span></div>
+          </div>
 
-            <section class="card detail-panel workspace-panel">
+          <div class="toolbar">
+            <button id="new-measurement-btn" class="btn primary">+ Новый замер</button>
+            <button id="refresh-btn" class="btn secondary">Обновить</button>
+            <select id="status-filter">
+              <option value="active">Рабочие</option>
+              <option value="all">Все</option>
+              <option value="Черновик">Черновик</option>
+              <option value="На проверке">На проверке</option>
+              <option value="Готовый замер">Готовый замер</option>
+              <option value="Архив">Архив</option>
+            </select>
+          </div>
+
+          <div class="layout">
+            <aside class="card list-panel">
+              <h2>Замеры</h2>
+              <div id="measurements-list" class="measurements-list"></div>
+            </aside>
+
+            <section class="card detail-panel">
               <div id="empty-detail" class="empty-state">
-                <h2>Рабочий экран замерщика</h2>
-                <p>Создайте новый замер или откройте список «Замеры», чтобы посмотреть существующие карточки.</p>
+                <h2>Выберите замер</h2>
+                <p>Или создайте новый замер для пустого проёма, каркаса или бетонной лестницы.</p>
               </div>
 
               <form id="measurement-form" class="hidden">
@@ -252,51 +272,11 @@
                 <p id="form-message" class="form-message"></p>
               </form>
             </section>
-          </section>
-
-          <section id="measurements-view" class="measurements-view hidden">
-            <div class="measurements-head">
-              <div>
-                <div class="eyebrow">Список и просмотр</div>
-                <h2>Замеры</h2>
-                <p class="muted-text">Найдите замер, откройте чистый просмотр, затем при необходимости нажмите «Редактировать».</p>
-              </div>
-              <button id="back-workspace-btn" type="button" class="btn secondary">К рабочему экрану</button>
-            </div>
-
-            <div class="measurements-controls card">
-              <label class="visually-hidden" for="measurements-search">Поиск замера</label>
-              <input id="measurements-search" type="search" placeholder="Поиск: номер, клиент, телефон, адрес" autocomplete="off" />
-              <select id="status-filter" aria-label="Фильтр статуса">
-                <option value="active">Рабочие</option>
-                <option value="all">Все</option>
-                <option value="Черновик">Черновик</option>
-                <option value="На проверке">На проверке</option>
-                <option value="Готовый замер">Готовый замер</option>
-                <option value="Архив">Архив</option>
-              </select>
-              <button id="refresh-btn" class="btn secondary" type="button">Обновить</button>
-            </div>
-
-            <div class="measurements-layout">
-              <aside class="card list-panel">
-                <h2>Найденные замеры</h2>
-                <div id="measurements-list" class="measurements-list"></div>
-              </aside>
-
-              <section class="card preview-panel">
-                <div id="preview-empty" class="empty-state">
-                  <h2>Выберите замер</h2>
-                  <p>Здесь откроется просмотр без полей ввода. Редактирование доступно отдельной кнопкой.</p>
-                </div>
-                <article id="measurement-preview" class="measurement-preview hidden"></article>
-              </section>
-            </div>
-          </section>
+          </div>
         </section>
       </main>
     </div>
-    <script src="./app.js?v=20260516-v16"></script>
+    <script src="./app.js?v=20260515-v14"></script>
     <script src="./photo-preview.js?v=20260515-v14"></script>
     <script src="./details-enhance.js?v=20260515-v14"></script>
     <script src="./scheme-sketch.js?v=20260506-disabled"></script>

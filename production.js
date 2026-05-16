@@ -248,12 +248,32 @@ function productionVariant(project) {
   return { type, mode, opening, turn };
 }
 
+function productionDims(measurement, project) {
+  const p = project.params || {};
+  return {
+    M1: pickNumber(p.M1, p.firstFlightLength, measurement.flight1_length_mm),
+    B1: pickNumber(p.B1, p.firstFlightWidth, measurement.flight1_width_mm),
+    N1: pickNumber(p.N1, p.firstFlightSteps, measurement.flight1_steps_count),
+    M2: pickNumber(p.M2, p.secondFlightLength, measurement.flight2_length_mm),
+    B2: pickNumber(p.B2, p.secondFlightWidth, measurement.flight2_width_mm),
+    N2: pickNumber(p.N2, p.secondFlightSteps, measurement.flight2_steps_count),
+    ZL: pickNumber(p.ZL, p.turnLength, measurement.corner_zone_length_mm),
+    ZW: pickNumber(p.ZW, p.turnWidth, measurement.corner_zone_width_mm),
+    ZN: pickNumber(p.ZN, p.winderSteps, measurement.winder_steps_count),
+    H: pickNumber(p.H, p.height, measurement.height_clean_to_clean_mm),
+    T: pickNumber(p.T, p.slabThickness, measurement.slab_thickness_mm),
+    L: pickNumber(p.L, p.openingLength, measurement.opening_length_mm),
+    W: pickNumber(p.W, p.openingWidth, measurement.opening_width_mm),
+  };
+}
+
 function collectIssues(measurement, project, finish, svg) {
   const p = project.params || {};
-  const slabThickness = p.T ?? p.slabThickness ?? measurement.slab_thickness_mm;
+  const dims = productionDims(measurement, project);
   const treadMode = project.treadMode || {};
   const b1 = treadMode.sameTread === false ? treadMode.b1 : (p.b || p.treadDepth || p.b1 || treadMode.b1 || measurement.tread_depth_mm);
   const b2 = treadMode.sameTread === false ? treadMode.b2 : (p.b || p.treadDepth || p.b2 || treadMode.b2 || measurement.tread_depth_mm);
+  const h = pickNumber(p.h, p.riserHeight, measurement.riser_height_mm);
   const v = productionVariant(project);
   const detailed = productionMeasurementMode(project) === "detailed";
   const missing = [];
@@ -266,39 +286,39 @@ function collectIssues(measurement, project, finish, svg) {
   if (!svg) missing.push("сохранённая схема/SVG не заполнена");
   // H/T обязательны для пустого проёма и справочные для готовой лестницы.
   if (v.mode === "empty" && v.opening === "straight") {
-    addIf("L", pickNumber(p.L, measurement.opening_length_mm, measurement.flight1_length_mm));
-    addIf("W", pickNumber(p.W, measurement.opening_width_mm, measurement.flight1_width_mm));
-    addIf("H", pickNumber(p.H, measurement.height_clean_to_clean_mm));
-    addIf("T", pickNumber(slabThickness));
+    addIf("L", dims.L || dims.M1);
+    addIf("W", dims.W || dims.B1);
+    addIf("H", dims.H);
+    addIf("T", dims.T);
   } else if (v.mode === "empty") {
-    addIf("M1", pickNumber(p.M1, measurement.flight1_length_mm));
-    addIf("B1", pickNumber(p.B1, measurement.flight1_width_mm));
-    addIf("M2", pickNumber(p.M2, measurement.flight2_length_mm));
-    addIf("B2", pickNumber(p.B2, measurement.flight2_width_mm));
-    addIf("ZL", pickNumber(p.ZL, measurement.corner_zone_length_mm));
-    addIf("ZW", pickNumber(p.ZW, measurement.corner_zone_width_mm));
-    addIf("H", pickNumber(p.H, measurement.height_clean_to_clean_mm));
-    addIf("T", pickNumber(slabThickness));
+    addIf("M1", dims.M1);
+    addIf("B1", dims.B1);
+    addIf("M2", dims.M2);
+    addIf("B2", dims.B2);
+    addIf("ZL", dims.ZL);
+    addIf("ZW", dims.ZW);
+    addIf("H", dims.H);
+    addIf("T", dims.T);
   } else {
-    addIf("M1", pickNumber(p.M1, measurement.flight1_length_mm));
-    addIf("B1", pickNumber(p.B1, measurement.flight1_width_mm));
-    addIf("N1", pickNumber(p.N1, measurement.flight1_steps_count));
+    addIf("M1", dims.M1);
+    addIf("B1", dims.B1);
+    addIf("N1", dims.N1);
     if (detailed) {
       addIf("b/b1", b1);
-      addIf("h", pickNumber(p.h, measurement.riser_height_mm));
+      addIf("h", h);
     }
     if (v.opening !== "straight") {
-      addIf("M2", pickNumber(p.M2, measurement.flight2_length_mm));
-      addIf("B2", pickNumber(p.B2, measurement.flight2_width_mm));
-      addIf("N2", pickNumber(p.N2, measurement.flight2_steps_count));
-      if (v.turn === "winder") addIf("ZN", pickNumber(p.ZN, measurement.winder_steps_count));
+      addIf("M2", dims.M2);
+      addIf("B2", dims.B2);
+      addIf("N2", dims.N2);
+      if (v.turn === "winder") addIf("ZN", dims.ZN);
       if (detailed) {
         addIf("b/b2", b2);
-        addIf("ZL", pickNumber(p.ZL, measurement.corner_zone_length_mm));
-        addIf("ZW", pickNumber(p.ZW, measurement.corner_zone_width_mm));
+        addIf("ZL", dims.ZL);
+        addIf("ZW", dims.ZW);
       } else if (v.turn !== "winder") {
-        addIf("ZL", pickNumber(p.ZL, measurement.corner_zone_length_mm));
-        addIf("ZW", pickNumber(p.ZW, measurement.corner_zone_width_mm));
+        addIf("ZL", dims.ZL);
+        addIf("ZW", dims.ZW);
       }
     }
   }
@@ -315,28 +335,28 @@ function renderIssues(issues) {
 
 function renderDimensions(measurement, project) {
   const p = project.params || {};
-  const slabThickness = p.T ?? p.slabThickness ?? measurement.slab_thickness_mm;
+  const dims = productionDims(measurement, project);
   const treadMode = project.treadMode || {};
   const detailed = productionMeasurementMode(project) === "detailed";
   const v = productionVariant(project);
   const b1 = treadMode.sameTread === false ? treadMode.b1 : (p.b || p.treadDepth || p.b1 || treadMode.b1 || measurement.tread_depth_mm);
   const b2 = treadMode.sameTread === false ? treadMode.b2 : (p.b || p.treadDepth || p.b2 || treadMode.b2 || measurement.tread_depth_mm);
   const rows = [
-    v.mode === "empty" || detailed ? dimKv("H — высота от пола до пола", pickNumber(p.H, measurement.height_clean_to_clean_mm)) : "",
-    v.mode === "empty" ? dimKv("T — толщина перекрытия/проёма", pickNumber(slabThickness)) : "",
-    dimKv("L — длина проёма", pickNumber(p.L, measurement.opening_length_mm)),
-    dimKv("W — ширина проёма", pickNumber(p.W, measurement.opening_width_mm)),
-    dimKv("Марш 1 M1", pickNumber(p.M1, measurement.flight1_length_mm)),
-    dimKv("Марш 1 B1", pickNumber(p.B1, measurement.flight1_width_mm)),
-    countKv("Марш 1: N1", pickNumber(p.N1, measurement.flight1_steps_count) ? `${pickNumber(p.N1, measurement.flight1_steps_count)} шт` : ""),
+    v.mode === "empty" || detailed ? dimKv("H — высота от пола до пола", dims.H) : "",
+    v.mode === "empty" ? dimKv("T — толщина перекрытия/проёма", dims.T) : "",
+    dimKv("L — длина проёма", dims.L),
+    dimKv("W — ширина проёма", dims.W),
+    dimKv("Марш 1 M1", dims.M1),
+    dimKv("Марш 1 B1", dims.B1),
+    v.mode === "ready" && isPositiveNumber(dims.N1) ? countKv("Марш 1: N1", `${dims.N1} шт`) : "",
     detailed ? dimKv("Проступь b1", b1) : "",
-    dimKv("Марш 2 M2", pickNumber(p.M2, measurement.flight2_length_mm)),
-    dimKv("Марш 2 B2", pickNumber(p.B2, measurement.flight2_width_mm)),
-    countKv("Марш 2: N2", pickNumber(p.N2, measurement.flight2_steps_count) ? `${pickNumber(p.N2, measurement.flight2_steps_count)} шт` : ""),
-    detailed ? dimKv("Проступь b2", b2) : "",
-    detailed || v.turn !== "winder" ? dimKv("Поворот ZL", pickNumber(p.ZL, measurement.corner_zone_length_mm)) : "",
-    detailed || v.turn !== "winder" ? dimKv("Поворот ZW", pickNumber(p.ZW, measurement.corner_zone_width_mm)) : "",
-    v.turn === "winder" ? countKv("Забежные: ZN", pickNumber(p.ZN, measurement.winder_steps_count) ? `${pickNumber(p.ZN, measurement.winder_steps_count)} шт` : "") : "",
+    v.opening !== "straight" ? dimKv("Марш 2 M2", dims.M2) : "",
+    v.opening !== "straight" ? dimKv("Марш 2 B2", dims.B2) : "",
+    v.mode === "ready" && v.opening !== "straight" && isPositiveNumber(dims.N2) ? countKv("Марш 2: N2", `${dims.N2} шт`) : "",
+    detailed && v.opening !== "straight" ? dimKv("Проступь b2", b2) : "",
+    v.opening !== "straight" && (detailed || v.turn !== "winder") ? dimKv("Поворот ZL", dims.ZL) : "",
+    v.opening !== "straight" && (detailed || v.turn !== "winder") ? dimKv("Поворот ZW", dims.ZW) : "",
+    v.mode === "ready" && v.turn === "winder" && isPositiveNumber(dims.ZN) ? countKv("Забежные: ZN", `${dims.ZN} шт`) : "",
   ].filter(Boolean);
   return rows.length ? `<div class="production-grid">${rows.join("")}</div>` : `<p class="production-empty-line">Рабочие размеры не заполнены.</p>`;
 }
@@ -456,7 +476,7 @@ function renderCard() {
     ${section("Итоговая схема", svg ? `<div class="production-svg">${svg}</div>` : `<p class="production-empty-line">Схема не сохранена.</p>`)}
     ${section("Требует уточнения", renderIssues(issues))}
     ${section("Размеры каркаса", renderDimensions(m, project))}
-    ${detailed ? section("Условия объекта", renderMarks(project)) : ""}
+    ${section("Условия объекта", renderMarks(project))}
     ${detailed ? section("Чистовые детали", renderFinish(finish)) : ""}
     ${section("Фото объекта", renderPhotos())}
     ${section("Комментарии", `<div class="production-note">${escapeHtml(m.general_comment || m.obstacles_comment || "Комментариев нет.")}</div>`)}

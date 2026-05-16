@@ -384,6 +384,11 @@
     return measurementMode() === "detailed";
   }
 
+  function shouldRenderSiteMarks() {
+    const currentMode = variant().mode;
+    return isDetailedMode() || currentMode === "empty" || currentMode === "ready";
+  }
+
   function setMeasurementMode(mode) {
     projectState.measurementMode = mode === "detailed" ? "detailed" : "simple";
     saveState();
@@ -1343,7 +1348,7 @@
       else reserve("right", offset + sideLabelGap);
     });
 
-    const showSiteMarks = isDetailedMode() || variant().mode === "empty";
+    const showSiteMarks = shouldRenderSiteMarks();
     if (showSiteMarks) {
       reserve("top", margin.top + markerGap);
       reserve("right", margin.right + markerGap);
@@ -1374,7 +1379,7 @@
     const lines = geometry.lines.map((line) => renderLine(line, tr)).join("");
     const dimensions = geometry.dimensions.map((dim) => renderDimension(dim, tr)).join("");
     const route = renderRoute(geometry.route, tr);
-    const showSiteMarks = isDetailedMode() || variant().mode === "empty";
+    const showSiteMarks = shouldRenderSiteMarks();
     const walls = showSiteMarks ? renderWalls(geometry, tr) : "";
     const windows = showSiteMarks ? renderWindows(geometry, tr) : "";
     const ascent = showSiteMarks ? renderAscent(geometry, tr) : "";
@@ -1575,12 +1580,16 @@
     return items.join("");
   }
 
+  function isOuterSideWalled(side) {
+    return projectState.walls?.turn?.[side] === true;
+  }
+
   function renderTopBalustrade(geometry, tr) {
     const b = projectState.topBalustrade || DEFAULT_PROJECT.topBalustrade;
     if (!b.enabled) return "";
     const rect = geometry.outer;
     const sides = b.sides?.length ? b.sides : ["top"];
-    return sides.map((side) => {
+    return sides.filter((side) => !isOuterSideWalled(side)).map((side) => {
       const [a0, b0] = sideSegment(rect, side);
       const a = tr.map(a0);
       const c = tr.map(b0);

@@ -11,7 +11,7 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" />
-    <link rel="stylesheet" href="./styles.css?v=20260515-production-v12" />
+    <link rel="stylesheet" href="./styles.css?v=20260515-v14" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   </head>
   <body>
@@ -49,7 +49,7 @@
         </section>
 
         <section id="main-view" class="hidden">
-          <div class="grid stats-grid">
+          <div class="grid stats-grid hidden" aria-hidden="true">
             <div class="card stat"><b id="stat-drafts">0</b><span>Черновики</span></div>
             <div class="card stat"><b id="stat-review">0</b><span>На проверке</span></div>
             <div class="card stat"><b id="stat-ready">0</b><span>Готовые</span></div>
@@ -59,7 +59,6 @@
           <div class="toolbar">
             <button id="new-measurement-btn" class="btn primary">+ Новый замер</button>
             <button id="refresh-btn" class="btn secondary">Обновить</button>
-            <a class="btn secondary" href="./production.html">Производство</a>
             <select id="status-filter">
               <option value="active">Рабочие</option>
               <option value="all">Все</option>
@@ -106,7 +105,6 @@
                   <button type="button" class="tab" data-tab="sizes">Размеры</button>
                   <button type="button" class="tab" data-tab="photos">Фото</button>
                   <button type="button" class="tab" data-tab="check">Проверка</button>
-                  <button type="button" class="tab" data-tab="archive">Архив</button>
                 </div>
 
                 <div class="tab-panel" data-panel="general">
@@ -144,7 +142,7 @@
                         <option>Сложный / нестандартный</option>
                       </select>
                     </div>
-                    <div>
+                    <div data-simple-hidden>
                       <label>Статус</label>
                       <select name="status">
                         <option>Черновик</option>
@@ -160,7 +158,7 @@
                   </div>
 
                   <div class="grid three">
-                    <div>
+                    <div data-simple-hidden>
                       <label>Стадия объекта</label>
                       <select name="object_stage">
                         <option>Черновая</option>
@@ -255,22 +253,22 @@
                   <div id="check-list" class="check-list"></div>
                 </div>
 
-                <div class="tab-panel hidden" data-panel="archive">
+                <div class="form-actions">
+                  <button type="submit" class="btn primary">Сохранить</button>
+                  <button id="send-review-btn" type="button" class="btn secondary">Отправить на проверку</button>
+                  <button id="accept-btn" type="button" class="btn secondary">Принять замер</button>
+                </div>
+                <details id="technical-actions" class="technical-actions hidden">
+                  <summary>Технические действия</summary>
                   <div class="archive-actions">
+                    <a class="btn secondary" href="./production.html" target="_blank" rel="noopener">Задания производству</a>
                     <button id="download-json-btn" type="button" class="btn secondary">Скачать JSON</button>
                     <button id="download-csv-btn" type="button" class="btn secondary">Скачать CSV</button>
                     <button id="archive-btn" type="button" class="btn warning-btn">Перевести в архив</button>
                     <button id="soft-delete-btn" type="button" class="btn danger">Мягко удалить</button>
                   </div>
-                  <p class="muted-text">ZIP с PDF и фото будет добавлен во второй итерации. В этой версии уже можно скачать данные замера JSON/CSV и перевести карточку в архив.</p>
-                </div>
-
-                <div class="form-actions">
-                  <button type="submit" class="btn primary">Сохранить</button>
-                  <button id="send-review-btn" type="button" class="btn secondary">Отправить на проверку</button>
-                  <button id="accept-btn" type="button" class="btn secondary">Принять замер</button>
-                  <a class="btn secondary" href="./production.html" target="_blank" rel="noopener">Задания производству</a>
-                </div>
+                  <p class="muted-text small">Служебные действия доступны администратору, менеджеру или конструктору и скрыты от основного мобильного сценария замерщика.</p>
+                </details>
                 <p id="form-message" class="form-message"></p>
               </form>
             </section>
@@ -278,10 +276,10 @@
         </section>
       </main>
     </div>
-    <script src="./app.js?v=20260515-production-v12"></script>
-    <script src="./photo-preview.js?v=20260515-production-v12"></script>
-    <script src="./details-enhance.js?v=20260515-production-v12"></script>
+    <script src="./app.js?v=20260515-v14"></script>
+    <script src="./photo-preview.js?v=20260515-v14"></script>
+    <script src="./details-enhance.js?v=20260515-v14"></script>
     <script src="./scheme-sketch.js?v=20260506-disabled"></script>
-    <script src="./drawing-bridge.js?v=20260515-production-v12"></script>
+    <script src="./drawing-bridge.js?v=20260515-v14"></script>
   </body>
 </html>

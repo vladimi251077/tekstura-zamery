@@ -1,7 +1,7 @@
 (() => {
   const ROOT_ID = "drawing-bridge-root";
-  const STYLE_ID = "drawing-bridge-style-v12";
-  const SECTION_STORAGE_KEY = "tekstura:drawing-bridge:sections";
+  const STYLE_ID = "drawing-bridge-style-v14";
+  const SECTION_STORAGE_KEY = "tekstura:drawing-bridge:sections:v15-simple";
 
   const VIEW_W = 1100;
   const VIEW_H = 760;
@@ -167,6 +167,9 @@
       .db-mini-input span{height:34px;display:grid;place-items:center;background:#0f172a;color:#fff;font-size:11px;font-weight:950}
       .db-mini-input input{border:0;border-radius:0;min-height:34px;text-align:center;font-size:13px;font-weight:950;padding:0 4px}
       .db-mini-input.is-active{outline:3px solid rgba(245,158,11,.2)}
+      .db-measurement-simple .db-section:not([open])>summary{min-height:40px;background:#fff}
+      .db-measurement-simple .db-section-body{gap:8px}
+      .db-measurement-simple h4{margin:4px 0 0;font-size:13px}
       .db-card-list{display:grid;gap:8px}
       .db-card{border:1px solid #d9e2ef;border-radius:12px;background:#fbfdff;padding:10px;display:grid;gap:8px}
       .db-card-head{display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight:950;color:#0f172a}
@@ -203,14 +206,28 @@
       .db-svg .step-no{font:800 11px system-ui, sans-serif;fill:#475569;paint-order:stroke;stroke:#fff;stroke-width:3px;text-anchor:middle}
       .db-svg .caption{font:900 16px system-ui, sans-serif;fill:#0f172a;paint-order:stroke;stroke:#fff;stroke-width:4px}
       @media(max-width:1000px){
-        body:has(.tab.active[data-tab="sizes"]) .detail-panel.card{padding:8px!important}
-        .db-shell{grid-template-columns:1fr}
-        .db-svg-wrap{min-height:440px;grid-template-rows:minmax(440px,auto) auto}
-        .db-svg-wrap svg{height:440px;min-height:440px}
-        .db-on-svg-fields{grid-template-columns:repeat(2,minmax(0,1fr));padding:8px}
-        .db-grid,.db-grid.three,.db-card-grid{grid-template-columns:1fr}
-        .db-actions{display:grid;grid-template-columns:1fr}
-        .db-btn{min-height:46px}
+        body:has(.tab.active[data-tab="sizes"]) main{padding:0 2px}
+        body:has(.tab.active[data-tab="sizes"]) .detail-panel.card{padding:2px!important}
+        .db-shell{grid-template-columns:1fr;gap:6px}
+        .db-right{order:-1}
+        .db-section{border-radius:14px;box-shadow:none}
+        .db-section>summary{padding:10px 12px}
+        .db-section-body{padding:8px}
+        .db-svg-wrap{min-height:58vh;grid-template-rows:minmax(58vh,auto) auto;padding:2px;border-radius:12px}
+        .db-svg-wrap svg{height:58vh;min-height:520px;width:100%}
+        .db-on-svg-fields{grid-template-columns:repeat(2,minmax(0,1fr));padding:5px;gap:5px}
+        .db-mini-input{min-height:36px;padding:5px 7px;border-radius:10px}.db-mini-input input{height:28px;font-size:16px}
+        .db-grid,.db-grid.three,.db-card-grid{grid-template-columns:1fr;gap:8px}
+        .db-actions{display:grid;grid-template-columns:1fr;gap:6px}
+        .db-btn{min-height:40px;padding:8px 10px;border-radius:12px}
+      }
+      @media(max-width:430px){
+        .db-svg-wrap{min-height:60vh;grid-template-rows:minmax(60vh,auto) auto}
+        .db-svg-wrap svg{height:60vh;min-height:540px}
+      }
+      @media(min-width:721px) and (max-width:1000px){
+        .db-svg-wrap{min-height:620px;grid-template-rows:minmax(620px,auto) auto}
+        .db-svg-wrap svg{height:620px;min-height:620px}
       }
     `;
     document.head.appendChild(style);
@@ -447,6 +464,8 @@
     const params = projectState?.params || {};
     const map = {
       height: "height_clean_to_clean_mm",
+      slabThickness: "slab_thickness_mm",
+      T: "slab_thickness_mm",
       openingLength: "opening_length_mm",
       openingWidth: "opening_width_mm",
       firstFlightLength: "flight1_length_mm",
@@ -512,6 +531,8 @@
     const tread = treadValues();
     return {
       height: numberField("height_clean_to_clean_mm", 0),
+      slabThickness: numberField("slab_thickness_mm", 0),
+      T: numberField("slab_thickness_mm", 0),
       openingLength: numberField("opening_length_mm", 0),
       openingWidth: numberField("opening_width_mm", 0),
       firstFlightLength: numberField("flight1_length_mm", 0),
@@ -563,7 +584,7 @@
 
   function applyAutoCalc() {
     refreshState();
-    if (variant().mode === "empty") return;
+    if (!isDetailedMode() || variant().mode === "empty") return;
     const tread = treadValues();
     const n1 = intField("flight1_steps_count", 0);
     const n2 = intField("flight2_steps_count", 0);
@@ -585,9 +606,9 @@
       : {
           frame: true,
           scheme: true,
-          ascent: true,
-          upperBalustrade: true,
-          siteMarks: true,
+          ascent: false,
+          upperBalustrade: false,
+          siteMarks: false,
           comments: true,
           actions: false,
           walls: false,
@@ -599,11 +620,9 @@
     if (!isDetailedMode()) {
       state.frame = true;
       state.scheme = true;
-      state.ascent = true;
-      if (variant().mode === "empty") {
-        state.upperBalustrade = state.upperBalustrade !== false;
-        state.siteMarks = state.siteMarks !== false;
-      }
+      state.ascent = Boolean(parsed.ascent);
+      state.upperBalustrade = Boolean(parsed.upperBalustrade);
+      state.siteMarks = Boolean(parsed.siteMarks);
       state.comments = true;
     }
     return state;
@@ -625,9 +644,15 @@
 
   function visibleParams() {
     const v = variant();
-    const tread = !isDetailedMode() || projectState?.treadMode?.sameTread !== false ? ["b"] : ["b1", "b2"];
-    const includeH = isDetailedMode(); // H — справочный размер. В простом режиме скрыт и нигде не обязателен.
-    const withOptionalH = (items) => includeH ? [...items, "H"] : items;
+    if (!isDetailedMode()) {
+      if (v.key === "empty_straight") return ["L", "W", "H", "T"];
+      if (v.mode === "empty") return ["M1", "B1", "M2", "B2", "ZL", "ZW", "H", "T"];
+      if (v.key === "ready_straight") return ["M1", "B1", "N1"];
+      if (v.turn === "winder") return ["M1", "B1", "N1", "M2", "B2", "N2", "ZN"];
+      return ["M1", "B1", "N1", "M2", "B2", "N2", "ZL", "ZW"];
+    }
+    const tread = projectState?.treadMode?.sameTread !== false ? ["b"] : ["b1", "b2"];
+    const withOptionalH = (items) => [...items, "H"];
     if (v.key === "empty_straight") return withOptionalH(["L", "W"]);
     if (v.mode === "empty") return withOptionalH(["M1", "B1", "M2", "B2", "ZL", "ZW"]);
     if (v.key === "ready_straight") return withOptionalH(["M1", "B1", "N1", "h", ...(projectState?.treadMode?.sameTread !== false ? ["b"] : ["b1"])]);
@@ -637,7 +662,8 @@
   const FIELD_META = {
     L: { name: "opening_length_mm", label: "L — длина проёма", unit: "мм" },
     W: { name: "opening_width_mm", label: "W — ширина проёма", unit: "мм" },
-    H: { name: "height_clean_to_clean_mm", label: "H — высота", unit: "мм" },
+    H: { name: "height_clean_to_clean_mm", label: "H — высота от пола до пола", unit: "мм" },
+    T: { name: "slab_thickness_mm", label: "T — толщина перекрытия/проёма", unit: "мм" },
     M1: { name: "flight1_length_mm", label: "M1 — длина марша 1", unit: "мм", auto: "flight1Length" },
     B1: { name: "flight1_width_mm", label: "B1 — ширина марша 1", unit: "мм" },
     N1: { name: "flight1_steps_count", label: "N1 — ступени марша 1", unit: "шт" },
@@ -670,7 +696,7 @@
     const v = variant();
     const isEmptyOpening = v.mode === "empty" || String(projectState.type || "").startsWith("empty_");
     const isActiveField = projectState.activeParam === code || (projectState.activeZone === "flight1" && ["M1", "B1", "N1"].includes(code)) || (projectState.activeZone === "flight2" && ["M2", "B2", "N2"].includes(code)) || (projectState.activeZone === "turn" && ["ZL", "ZW", "ZN"].includes(code));
-    const autoKey = !isEmptyOpening && v.mode === "ready" && meta.auto ? meta.auto : "";
+    const autoKey = isDetailedMode() && !isEmptyOpening && v.mode === "ready" && meta.auto ? meta.auto : "";
     const auto = autoKey ? Boolean(projectState.autoCalc[autoKey]) : false;
     const readonly = autoKey && auto ? "readonly" : "";
     return `<div class="db-field ${isActiveField ? "is-active" : ""}" data-field-wrap="${code}">
@@ -688,7 +714,7 @@
       const active = projectState.activeParam === code ? "is-active" : "";
       const vMini = variant();
       const emptyMini = vMini.mode === "empty" || String(projectState.type || "").startsWith("empty_");
-      const readonly = !emptyMini && vMini.mode === "ready" && meta.auto && projectState.autoCalc[meta.auto] ? "readonly" : "";
+      const readonly = isDetailedMode() && !emptyMini && vMini.mode === "ready" && meta.auto && projectState.autoCalc[meta.auto] ? "readonly" : "";
       return `<label class="db-mini-input ${active}" title="${escapeHtml(meta.label)}">
         <span>${escapeHtml(code)}</span>
         <input data-field="${meta.name}" data-param-code="${code}" ${numericInputAttrs()} value="${escapeHtml(readDraftField(meta.name))}" ${readonly}/>
@@ -705,9 +731,11 @@
       ? `<label class="db-check"><input type="checkbox" data-tread-same ${projectState.treadMode.sameTread !== false ? "checked" : ""}/> Одинаковая проступь для всех маршей</label>`
       : "";
     const simpleNote = isDetailedMode() ? "" : `<div class="db-muted">Простой режим: показаны только основные размеры, схема и комментарий. Детальные данные не удаляются и появятся при переключении в детальный режим.</div>`;
-    const calcNote = (mode === "empty" || String(projectState.type || "").startsWith("empty_"))
-      ? `<div class="db-muted">Пустой проём: M1/M2 — это геометрия проёма/зоны, без авторасчёта ступеней.</div>`
-      : `<div class="db-muted">M1/M2 считаются от каркасной проступи: M1 = N1 × b, M2 = N2 × b. Вылеты готовых деталей считаются отдельно и не меняют длину каркаса.</div>`;
+    const calcNote = !isDetailedMode()
+      ? `<div class="db-muted">В простом режиме M1/M2 вводятся вручную как основные габариты. Авторасчёт M=N×b, проступи и подступёнки скрыты до детального режима.</div>`
+      : (mode === "empty" || String(projectState.type || "").startsWith("empty_"))
+        ? `<div class="db-muted">Пустой проём: M1/M2 — это геометрия проёма/зоны, без авторасчёта ступеней.</div>`
+        : `<div class="db-muted">M1/M2 считаются от каркасной проступи: M1 = N1 × b, M2 = N2 × b. Вылеты готовых деталей считаются отдельно и не меняют длину каркаса.</div>`;
     return `
       <div class="db-grid">
         <div class="db-field">
@@ -1042,14 +1070,22 @@
     let title = "";
     let outer = { x: 0, y: 0, w: m1, h: b1 };
 
+    const visibleDimensionIds = new Set(visibleParams());
     const addDim = (id, label, value, unit, side, start, end, offset = 56) => {
+      if (!visibleDimensionIds.has(id)) return;
       dimensions.push({ id, label, value, unit, side, start, end, offset });
     };
-    const addTreadsVertical = (rect, count) => {
-      for (let i = 1; i < count; i += 1) lines.push({ start: { x: rect.x, y: rect.y + rect.h * i / count }, end: { x: rect.x + rect.w, y: rect.y + rect.h * i / count }, kind: "tread" });
+    const shouldDrawTreads = () => v.mode === "ready";
+    const visualTreadCount = (count, fallback) => Math.max(1, Math.round(Number(count) || fallback));
+    const addTreadsVertical = (rect, count, fallback = 8) => {
+      if (!shouldDrawTreads()) return;
+      const steps = visualTreadCount(count, fallback);
+      for (let i = 1; i < steps; i += 1) lines.push({ start: { x: rect.x, y: rect.y + rect.h * i / steps }, end: { x: rect.x + rect.w, y: rect.y + rect.h * i / steps }, kind: "tread" });
     };
-    const addTreadsHorizontal = (rect, count) => {
-      for (let i = 1; i < count; i += 1) lines.push({ start: { x: rect.x + rect.w * i / count, y: rect.y }, end: { x: rect.x + rect.w * i / count, y: rect.y + rect.h }, kind: "tread" });
+    const addTreadsHorizontal = (rect, count, fallback = 10) => {
+      if (!shouldDrawTreads()) return;
+      const steps = visualTreadCount(count, fallback);
+      for (let i = 1; i < steps; i += 1) lines.push({ start: { x: rect.x + rect.w * i / steps, y: rect.y }, end: { x: rect.x + rect.w * i / steps, y: rect.y + rect.h }, kind: "tread" });
     };
     const setFlightDirection = (id, start, end) => {
       flightDirections[id] = { start, end };
@@ -1063,6 +1099,7 @@
       addDim("L", "L", p.openingLength || l, "мм", "top", { x: 0, y: 0 }, { x: l, y: 0 }, 70);
       addDim("W", "W", p.openingWidth || w, "мм", "left", { x: 0, y: 0 }, { x: 0, y: w }, 70);
       addDim("H", "H", p.height, "мм", "right", { x: l, y: 0 }, { x: l, y: w }, 120);
+      addDim("T", "T", p.slabThickness, "мм", "bottom", { x: 0, y: w }, { x: l, y: w }, 130);
       title = "Пустой прямой проём";
     } else if (v.key.startsWith("empty_l")) {
       const right = v.key.includes("_right");
@@ -1091,6 +1128,7 @@
       addDim("ZL", "ZL", p.turnLength, "мм", "top", { x: turn.x, y: turn.y }, { x: turn.x + turn.w, y: turn.y }, 125);
       addDim("ZW", "ZW", p.turnWidth, "мм", right ? "right" : "left", { x: turn.x, y: turn.y }, { x: turn.x, y: turn.y + turn.h }, 125);
       addDim("H", "H", p.height, "мм", right ? "left" : "right", { x: outer.x + outer.w, y: outer.y }, { x: outer.x + outer.w, y: outer.y + outer.h }, 150);
+      addDim("T", "T", p.slabThickness, "мм", "bottom", { x: outer.x, y: outer.y + outer.h }, { x: outer.x + outer.w, y: outer.y + outer.h }, 165);
       title = right ? "Пустой Г-проём правый" : "Пустой Г-проём левый";
     } else if (v.key === "ready_straight") {
       const f1 = makeRect("flight1", 0, 0, m1, b1, "flight1");
@@ -2142,9 +2180,9 @@
       `
       : `
         ${section("frame", "Основные размеры", frameSection())}
-        ${variant().mode === "empty" ? section("ascent", "Направление подъёма", ascentSection()) : ""}
-        ${variant().mode === "empty" ? section("upperBalustrade", "Верхняя балюстрада", upperBalustradeSection()) : ""}
-        ${variant().mode === "empty" ? section("siteMarks", "Стены / продолжение / препятствия", siteMarksSection()) : ""}
+        ${section("ascent", "Направление подъёма", ascentSection())}
+        ${section("upperBalustrade", "Верхняя балюстрада", upperBalustradeSection())}
+        ${section("siteMarks", "Стены / продолжение / препятствия", siteMarksSection())}
         ${section("comments", "Комментарий", commentsSection())}
       `;
     root.innerHTML = `<div class="db-shell db-mode-${variant().mode} db-measurement-${measurementMode()}">

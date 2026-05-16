@@ -294,11 +294,14 @@ function applyRoleUI() {
   const deleteBtn = $("#soft-delete-btn");
   const jsonBtn = $("#download-json-btn");
   const csvBtn = $("#download-csv-btn");
+  const technicalActions = $("#technical-actions");
+  const canUseTechnicalActions = canUseTechnicalExports() || canArchiveMeasurements() || canDeleteMeasurements();
   acceptBtn?.classList.toggle("hidden", !canAcceptMeasurements());
   archiveBtn?.classList.toggle("hidden", !canArchiveMeasurements());
   deleteBtn?.classList.toggle("hidden", !canDeleteMeasurements());
   jsonBtn?.classList.toggle("hidden", !canUseTechnicalExports());
   csvBtn?.classList.toggle("hidden", !canUseTechnicalExports());
+  technicalActions?.classList.toggle("hidden", !canUseTechnicalActions);
   const form = $("#measurement-form");
   if (form) form.dataset.role = role;
 }
@@ -575,49 +578,71 @@ function positiveFieldValue(name) {
 
 function positiveProjectValue(project, key, fallbackName = "") {
   const p = project?.params || {};
-  const raw = p[key];
-  const direct = Number(raw || 0);
+  const direct = Number(p[key] ?? 0);
   if (Number.isFinite(direct) && direct > 0) return true;
   return fallbackName ? positiveFieldValue(fallbackName) : false;
+}
+
+function projectMeasurementMode(project) {
+  return normalizeMeasurementMode(project?.measurementMode || getCurrentMeasurementMode());
 }
 
 function getRequiredMeasurementErrors() {
   ensureDynamicMeasurementFields();
   const form = $("#measurement-form");
-  const project = parseJsonObject(form?.drawing_project_json?.value || state.selected?.drawing_project_json || "");
-  const type = String(project.type || "empty_straight");
-  const mode = type.startsWith("empty") ? "empty" : "ready";
-  const isStraight = type.includes("straight");
+  const rawProject = form?.drawing_project_json?.value || state.selected?.drawing_project_json || "";
+  const project = parseJsonObject(rawProject);
+  const type = String(project.type || "");
+  const measurementMode = projectMeasurementMode(project);
+  const mode = type.startsWith("empty") || !type ? "empty" : "ready";
+  const isStraight = type ? type.includes("straight") : String(form?.opening_type?.value || "").includes("Прям");
   const isWinder = type.includes("winder");
+  const isDetailed = measurementMode === "detailed";
+  const isReady = mode === "ready";
   const errors = [];
   const needProject = (label, key, field) => {
     if (!positiveProjectValue(project, key, field)) errors.push(label);
   };
-  if (!String(form?.drawing_svg?.value || state.selected?.drawing_svg || "").trim()) errors.push("итоговая схема");
-  // H — высота оставлена как справочное поле: не блокирует отправку/принятие.
+
+  if (!type) errors.push("схема");
+  if (!String(form?.drawing_svg?.value || state.selected?.drawing_svg || "").trim()) errors.push("сохранённая схема/SVG");
+  // H — высота чистый-чистый — справочное поле: не блокирует простой режим.
   if (mode === "empty" && isStraight) {
-    needProject("L — длина проёма", "L", "opening_length_mm");
-    needProject("W — ширина проёма", "W", "opening_width_mm");
+    needProject("L", "L", "opening_length_mm");
+    needProject("W", "W", "opening_width_mm");
+    needProject("H", "H", "height_clean_to_clean_mm");
+    needProject("T", "T", "slab_thickness_mm");
   } else if (mode === "empty") {
-    needProject("M1 — длина зоны 1", "M1", "flight1_length_mm");
-    needProject("B1 — ширина зоны 1", "B1", "flight1_width_mm");
-    needProject("M2 — длина зоны 2", "M2", "flight2_length_mm");
-    needProject("B2 — ширина зоны 2", "B2", "flight2_width_mm");
-    needProject("ZL — длина поворотной зоны", "ZL", "corner_zone_length_mm");
-    needProject("ZW — ширина поворотной зоны", "ZW", "corner_zone_width_mm");
+    needProject("M1", "M1", "flight1_length_mm");
+    needProject("B1", "B1", "flight1_width_mm");
+    needProject("M2", "M2", "flight2_length_mm");
+    needProject("B2", "B2", "flight2_width_mm");
+    needProject("ZL", "ZL", "corner_zone_length_mm");
+    needProject("ZW", "ZW", "corner_zone_width_mm");
+    needProject("H", "H", "height_clean_to_clean_mm");
+    needProject("T", "T", "slab_thickness_mm");
   } else {
-    needProject("M1 — длина марша 1", "M1", "flight1_length_mm");
-    needProject("B1 — ширина марша 1", "B1", "flight1_width_mm");
-    needProject("N1 — ступени марша 1", "N1", "flight1_steps_count");
-    if (!(positiveProjectValue(project, "b", "tread_depth_mm") || positiveProjectValue(project, "b1", "tread_depth_flight1_mm"))) errors.push("b/b1 — проступь марша 1");
+    needProject("M1", "M1", "flight1_length_mm");
+    needProject("B1", "B1", "flight1_width_mm");
+    if (isReady) needProject("N1", "N1", "flight1_steps_count");
+    if (isDetailed) {
+      if (!(positiveProjectValue(project, "b", "tread_depth_mm") || positiveProjectValue(project, "b1", "tread_depth_flight1_mm"))) errors.push("b/b1");
+      needProject("h", "h", "riser_height_mm");
+    }
     if (!isStraight) {
-      needProject("M2 — длина марша 2", "M2", "flight2_length_mm");
-      needProject("B2 — ширина марша 2", "B2", "flight2_width_mm");
-      needProject("N2 — ступени марша 2", "N2", "flight2_steps_count");
-      if (!(positiveProjectValue(project, "b", "tread_depth_mm") || positiveProjectValue(project, "b2", "tread_depth_flight2_mm"))) errors.push("b/b2 — проступь марша 2");
-      needProject("ZL — длина поворотной зоны", "ZL", "corner_zone_length_mm");
-      needProject("ZW — ширина поворотной зоны", "ZW", "corner_zone_width_mm");
-      if (isWinder) needProject("ZN — количество забежных", "ZN", "winder_steps_count");
+      needProject("M2", "M2", "flight2_length_mm");
+      needProject("B2", "B2", "flight2_width_mm");
+      if (isReady) {
+        needProject("N2", "N2", "flight2_steps_count");
+        if (isWinder) needProject("ZN", "ZN", "winder_steps_count");
+      }
+      if (isDetailed) {
+        if (!(positiveProjectValue(project, "b", "tread_depth_mm") || positiveProjectValue(project, "b2", "tread_depth_flight2_mm"))) errors.push("b/b2");
+      }
+      if (isDetailed || !isWinder) {
+        needProject("ZL", "ZL", "corner_zone_length_mm");
+        needProject("ZW", "ZW", "corner_zone_width_mm");
+      }
     }
   }
   return [...new Set(errors)];
@@ -628,7 +653,10 @@ function requireWorkflowReady(actionLabel = "принятием замера") {
   const measurementErrors = getRequiredMeasurementErrors();
   const errors = [...clientErrors, ...measurementErrors];
   if (!errors.length) return true;
-  setMessage($("#form-message"), `Нельзя выполнить действие перед ${actionLabel}. Заполните: ${errors.join(", ")}.`, "error");
+  const message = actionLabel === "принятием замера"
+    ? `Нельзя принять замер. Заполните: ${errors.join(", ")}.`
+    : `Нельзя отправить замер. Заполните: ${errors.join(", ")}.`;
+  setMessage($("#form-message"), message, "error");
   activateTab(clientErrors.length ? "general" : "sizes");
   return false;
 }
@@ -774,11 +802,21 @@ function checkItems() {
   client.name ? add("ok", "Клиент заполнен") : add("error", "Не заполнен клиент");
   client.phone ? add("ok", "Телефон заполнен") : add("error", "Не заполнен телефон");
   client.address ? add("ok", "Адрес заполнен") : add("error", "Не заполнен адрес");
-  measurement.height_clean_to_clean_mm ? add("ok", "Высота заполнена") : add("warn", "Высота не заполнена — это справочно и не блокирует замер");
-  measurement.opening_length_mm ? add("ok", "Длина проёма заполнена") : add("error", "Не заполнена длина проёма");
-  measurement.opening_width_mm ? add("ok", "Ширина проёма заполнена") : add("error", "Не заполнена ширина проёма");
-  const photoTypes = selectedPhotos().map((p) => p.photo_type);
-  ["Ручной эскиз замера", "Общий вид снизу", "Проём сверху", "Место старта", "Место выхода"].forEach((t) => { photoTypes.includes(t) ? add("ok", `Фото есть: ${t}`) : add("error", `Нет фото: ${t}`); });
+
+  const required = getRequiredMeasurementErrors();
+  required.length
+    ? add("error", `Нельзя принять замер. Заполните: ${required.join(", ")}`)
+    : add("ok", "Обязательные размеры и сохранённая схема заполнены");
+
+  measurement.height_clean_to_clean_mm
+    ? add("ok", "H заполнена как справочный размер")
+    : add("warn", "H не заполнена — в простом режиме это не блокирует замер");
+
+  const photos = selectedPhotos();
+  photos.length
+    ? add("ok", `Фото текущего замера: ${photos.length}`)
+    : add("warn", "Фото не добавлены — это пока не блокирует принятие");
+
   const warmFloorValue = String(measurement.has_warm_floor || "").trim().toLowerCase();
   if (["да", "есть"].includes(warmFloorValue) && !measurement.obstacles_comment) add("warn", "Есть тёплый пол — добавьте комментарий");
   return result;

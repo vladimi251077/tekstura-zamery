@@ -584,12 +584,14 @@
 
   function applyAutoCalc() {
     refreshState();
-    if (!isDetailedMode() || variant().mode === "empty") return;
+    const v = variant();
+    if (v.mode === "empty") return;
     const tread = treadValues();
     const n1 = intField("flight1_steps_count", 0);
     const n2 = intField("flight2_steps_count", 0);
-    if (projectState.autoCalc.flight1Length && tread.b1 > 0 && n1 > 0) writeField("flight1_length_mm", n1 * tread.b1, true);
-    if (projectState.autoCalc.flight2Length && tread.b2 > 0 && n2 > 0) writeField("flight2_length_mm", n2 * tread.b2, true);
+    const forceSimpleReady = !isDetailedMode();
+    if ((forceSimpleReady || projectState.autoCalc.flight1Length) && tread.b1 > 0 && n1 > 0) writeField("flight1_length_mm", n1 * tread.b1, true);
+    if ((forceSimpleReady || projectState.autoCalc.flight2Length) && tread.b2 > 0 && n2 > 0) writeField("flight2_length_mm", n2 * tread.b2, true);
   }
 
   function getSectionState() {
@@ -647,9 +649,9 @@
     if (!isDetailedMode()) {
       if (v.key === "empty_straight") return ["L", "W", "H", "T"];
       if (v.mode === "empty") return ["M1", "B1", "M2", "B2", "ZL", "ZW", "H", "T"];
-      if (v.key === "ready_straight") return ["M1", "B1", "N1"];
-      if (v.turn === "winder") return ["M1", "B1", "N1", "M2", "B2", "N2", "ZN"];
-      return ["M1", "B1", "N1", "M2", "B2", "N2", "ZL", "ZW"];
+      if (v.key === "ready_straight") return ["B1", "N1"];
+      if (v.turn === "winder") return ["B1", "N1", "B2", "N2", "ZN"];
+      return ["B1", "N1", "B2", "N2"];
     }
     const tread = projectState?.treadMode?.sameTread !== false ? ["b"] : ["b1", "b2"];
     const withOptionalH = (items) => [...items, "H"];
@@ -722,6 +724,21 @@
     }).join("");
   }
 
+  function calculatedLengthRows() {
+    const v = variant();
+    if (isDetailedMode() || v.mode !== "ready") return "";
+    const tread = treadValues();
+    const n1 = intField("flight1_steps_count", 0);
+    const n2 = intField("flight2_steps_count", 0);
+    const row = (label, countLabel, stepLabel, steps, depth) => {
+      if (steps > 0 && depth > 0) return `${label} рассчитано: ${countLabel} × ${stepLabel} = ${steps * depth} мм (${steps} × ${depth} мм)`;
+      return `${label} рассчитается после ввода ${countLabel}`;
+    };
+    const rows = [row("M1", "N1", "b1", n1, tread.b1)];
+    if (v.opening !== "straight") rows.push(row("M2", "N2", "b2", n2, tread.b2));
+    return `<div class="db-muted">${rows.map(escapeHtml).join("<br>")}</div>`;
+  }
+
   function frameSection() {
     const v = variant();
     const mode = v.mode;
@@ -731,8 +748,11 @@
       ? `<label class="db-check"><input type="checkbox" data-tread-same ${projectState.treadMode.sameTread !== false ? "checked" : ""}/> Одинаковая проступь для всех маршей</label>`
       : "";
     const simpleNote = isDetailedMode() ? "" : `<div class="db-muted">Простой режим: показаны только основные размеры, схема и комментарий. Детальные данные не удаляются и появятся при переключении в детальный режим.</div>`;
+    const calcRows = calculatedLengthRows();
     const calcNote = !isDetailedMode()
-      ? `<div class="db-muted">В простом режиме M1/M2 вводятся вручную как основные габариты. Авторасчёт M=N×b, проступи и подступёнки скрыты до детального режима.</div>`
+      ? (mode === "empty" || String(projectState.type || "").startsWith("empty_"))
+        ? `<div class="db-muted">Пустой проём: M1/M2 — это ручная геометрия проёма/зоны, без авторасчёта ступеней.</div>`
+        : `<div class="db-muted">Готовое основание: замерщик вводит ширину и количество ступеней, а M1/M2 считаются автоматически по N×b. Стандартная проступь для расчёта — 250 мм.</div>`
       : (mode === "empty" || String(projectState.type || "").startsWith("empty_"))
         ? `<div class="db-muted">Пустой проём: M1/M2 — это геометрия проёма/зоны, без авторасчёта ступеней.</div>`
         : `<div class="db-muted">M1/M2 считаются от каркасной проступи: M1 = N1 × b, M2 = N2 × b. Вылеты готовых деталей считаются отдельно и не меняют длину каркаса.</div>`;
@@ -752,6 +772,7 @@
       </div>
       ${treadSwitch}
       <div class="db-grid">${fieldCodes.map(fieldControl).join("")}</div>
+      ${calcRows}
       ${simpleNote}
       ${calcNote}
     `;
@@ -1971,6 +1992,7 @@
       if (!target) return;
       if (target.dataset.field) {
         updateDraftField(target, root);
+        if (isAutoCalcSource(target.dataset.field)) applyAutoCalc();
         return;
       }
       if (target.dataset.window) {

@@ -286,6 +286,34 @@ function canUseTechnicalExports() {
   return roleMatches("admin", "manager", "constructor", "конструкт");
 }
 
+function canEditMeasurements() {
+  return roleMatches("admin", "manager", "check", "review", "провер", "zamer", "замер", "zamerschik");
+}
+
+function productionUrl(measurement = state.selected) {
+  return `./production.html${measurement?.id ? `?id=${encodeURIComponent(measurement.id)}` : ""}`;
+}
+
+function showWorkspacePanel(panel = "empty") {
+  const empty = $("#empty-detail");
+  const preview = $("#measurement-preview");
+  const form = $("#measurement-form");
+  empty?.classList.toggle("hidden", panel !== "empty");
+  preview?.classList.toggle("hidden", panel !== "preview");
+  form?.classList.toggle("hidden", panel !== "edit");
+  document.body.dataset.workspacePanel = panel;
+}
+
+function openMeasurementsScreen() {
+  $("#measurements-screen")?.classList.remove("hidden");
+  $("#measurement-search")?.focus();
+  renderList();
+}
+
+function closeMeasurementsScreen() {
+  $("#measurements-screen")?.classList.add("hidden");
+}
+
 function applyRoleUI() {
   const role = currentRole();
   document.body.dataset.userRole = role;
@@ -295,6 +323,7 @@ function applyRoleUI() {
   const jsonBtn = $("#download-json-btn");
   const csvBtn = $("#download-csv-btn");
   const technicalActions = $("#technical-actions");
+  const productionLink = $("#production-link");
   const canUseTechnicalActions = canUseTechnicalExports() || canArchiveMeasurements() || canDeleteMeasurements();
   acceptBtn?.classList.toggle("hidden", !canAcceptMeasurements());
   archiveBtn?.classList.toggle("hidden", !canArchiveMeasurements());
@@ -302,6 +331,7 @@ function applyRoleUI() {
   jsonBtn?.classList.toggle("hidden", !canUseTechnicalExports());
   csvBtn?.classList.toggle("hidden", !canUseTechnicalExports());
   technicalActions?.classList.toggle("hidden", !canUseTechnicalActions);
+  if (productionLink) productionLink.href = productionUrl();
   const form = $("#measurement-form");
   if (form) form.dataset.role = role;
 }
@@ -422,10 +452,28 @@ async function loadMeasurements() {
 }
 
 function filteredMeasurements() {
-  const filter = $("#status-filter").value;
-  if (filter === "all") return state.measurements.filter((m) => !m.is_deleted);
-  if (filter === "active") return state.measurements.filter((m) => !m.is_deleted && !m.is_archived && m.status !== "Архив");
-  return state.measurements.filter((m) => !m.is_deleted && m.status === filter);
+  const filter = $("#status-filter")?.value || "active";
+  const query = String($("#measurement-search")?.value || "").trim().toLowerCase();
+  const byStatus = (measurement) => {
+    if (measurement.is_deleted) return false;
+    if (filter === "all") return true;
+    if (filter === "active") return !measurement.is_archived && measurement.status !== "Архив";
+    return measurement.status === filter;
+  };
+  const byQuery = (measurement) => {
+    if (!query) return true;
+    const client = measurement.clients || {};
+    return [
+      measurement.number,
+      measurement.status,
+      measurement.site_situation,
+      measurement.opening_type,
+      client.name,
+      client.phone,
+      client.address,
+    ].some((value) => String(value || "").toLowerCase().includes(query));
+  };
+  return state.measurements.filter((measurement) => byStatus(measurement) && byQuery(measurement));
 }
 
 function renderStats() {
@@ -438,7 +486,7 @@ function renderStats() {
 function renderList() {
   const list = $("#measurements-list");
   const items = filteredMeasurements();
-  if (!items.length) return list.innerHTML = `<p class="muted-text">Замеров пока нет.</p>`;
+  if (!items.length) return list.innerHTML = `<p class="muted-text">Замеры по текущему поиску не найдены.</p>`;
   list.innerHTML = items.map((m) => {
     const c = m.clients || {};
     const active = state.selected?.id === m.id ? "active" : "";
@@ -505,13 +553,13 @@ function newMeasurement(mode = MEASUREMENT_MODE_DEFAULT) {
   state.photoScopeId = null;
   state.hiddenForeignPhotos = 0;
   fillForm(state.selected);
-  $("#empty-detail").classList.add("hidden");
-  $("#measurement-form").classList.remove("hidden");
+  closeMeasurementsScreen();
+  showWorkspacePanel("edit");
   renderPhotos();
   renderChecks();
 }
 
-async function selectMeasurement(id) {
+async function selectMeasurement(id, options = {}) {
   state.selected = state.measurements.find((m) => m.id === id);
   if (!state.selected) return;
   state.photos = [];
@@ -521,12 +569,23 @@ async function selectMeasurement(id) {
   const selectedId = state.selected.id;
   await loadPhotos(selectedId);
   if (state.selected?.id !== selectedId) return;
-  fillForm(state.selected);
-  $("#empty-detail").classList.add("hidden");
-  $("#measurement-form").classList.remove("hidden");
   renderList();
+  if (options.mode === "edit") {
+    editSelectedMeasurement();
+    return;
+  }
+  renderPreview();
+  showWorkspacePanel("preview");
+  closeMeasurementsScreen();
+}
+
+function editSelectedMeasurement() {
+  if (!state.selected) return;
+  fillForm(state.selected);
   renderPhotos();
   renderChecks();
+  showWorkspacePanel("edit");
+  closeMeasurementsScreen();
 }
 
 function fillForm(m) {
@@ -689,7 +748,7 @@ async function saveMeasurement(options = {}) {
     state.selected = data;
   }
   await loadMeasurements();
-  await selectMeasurement(state.selected.id);
+  await selectMeasurement(state.selected.id, { mode: "edit" });
   setMessage($("#form-message"), "Сохранено.", "ok");
   return state.selected;
 }
@@ -702,7 +761,7 @@ async function setStatus(status, extra = {}, options = {}) {
   if (error) throw error;
   state.selected = data;
   await loadMeasurements();
-  await selectMeasurement(data.id);
+  await selectMeasurement(data.id, { mode: "edit" });
 }
 
 async function loadPhotos(measurementId) {
@@ -721,6 +780,110 @@ async function loadPhotos(measurementId) {
   if (state.selected?.id !== measurementId) return;
   state.photoScopeId = measurementId;
   state.photos = filterPhotosForMeasurement(data || [], state.selected);
+}
+
+function previewValue(value, fallback = "—") {
+  const text = String(value ?? "").trim();
+  return text ? escapeHtml(text) : fallback;
+}
+
+function previewRow(label, value) {
+  return `<div class="preview-row"><span>${escapeHtml(label)}</span><b>${previewValue(value)}</b></div>`;
+}
+
+function previewPhotoMarkup() {
+  const photos = selectedPhotos();
+  if (!photos.length) return `<p class="muted-text">Фото ещё не добавлены.</p>`;
+  return `<div class="preview-photos">${photos.map((photo) => `
+    <div class="preview-photo-card">
+      <div class="preview-photo-thumb">Фото</div>
+      <b>${previewValue(photo.photo_type, "Фото")}</b>
+      <span>${previewValue(photo.file_path, "")}</span>
+    </div>`).join("")}</div>`;
+}
+
+function previewClarificationMarkup(m) {
+  const notes = [];
+  if (m.status === "Нужны уточнения") notes.push("Статус замера требует уточнения.");
+  if (!m.drawing_svg) notes.push("Нет сохранённой схемы/SVG.");
+  if (!selectedPhotos().length) notes.push("Фото не добавлены.");
+  return notes.length
+    ? `<ul>${notes.map((note) => `<li>${escapeHtml(note)}</li>`).join("")}</ul>`
+    : `<p class="muted-text">Критичных уточнений в карточке не отмечено.</p>`;
+}
+
+function renderPreview() {
+  const box = $("#measurement-preview");
+  const m = state.selected;
+  if (!box || !m) return;
+  const c = m.clients || {};
+  const project = parseJsonObject(m.drawing_project_json);
+  const productionHref = productionUrl(m);
+  const canEdit = canEditMeasurements();
+  box.innerHTML = `
+    <div class="preview-head">
+      <div>
+        <div class="eyebrow">Чистый просмотр</div>
+        <h2>${previewValue(m.number, "Замер")}</h2>
+        <span class="badge">${previewValue(m.status || "Черновик")}</span>
+      </div>
+      <div class="preview-actions">
+        <button type="button" class="btn secondary" data-open-measurements>Назад</button>
+        ${canEdit ? `<button type="button" class="btn primary" data-edit-measurement>Редактировать</button>` : ""}
+        <button type="button" class="btn ghost" data-print-preview>Печать</button>
+        <a class="btn secondary" href="${productionHref}" target="_blank" rel="noopener">Для изготовителя</a>
+      </div>
+    </div>
+
+    <div class="preview-grid">
+      <section class="preview-section">
+        <h3>Клиент и объект</h3>
+        ${previewRow("Клиент", c.name)}
+        ${previewRow("Телефон", c.phone)}
+        ${previewRow("Адрес", c.address)}
+        ${previewRow("Тип объекта", m.object_type || "Частный дом")}
+        ${previewRow("Что есть", m.site_situation)}
+        ${previewRow("Тип проёма", m.opening_type)}
+        ${previewRow("Направление", m.stair_direction)}
+        ${previewRow("Поворот", m.turn_type)}
+      </section>
+
+      <section class="preview-section">
+        <h3>Размеры и схема</h3>
+        ${previewRow("Высота чистый-чистый", m.height_clean_to_clean_mm ? `${m.height_clean_to_clean_mm} мм` : "")}
+        ${previewRow("Толщина перекрытия", m.slab_thickness_mm ? `${m.slab_thickness_mm} мм` : "")}
+        ${previewRow("Проём L × W", [m.opening_length_mm, m.opening_width_mm].filter(Boolean).join(" × "))}
+        ${previewRow("1 марш M1 × B1", [m.flight1_length_mm, m.flight1_width_mm].filter(Boolean).join(" × "))}
+        ${previewRow("2 марш M2 × B2", [m.flight2_length_mm, m.flight2_width_mm].filter(Boolean).join(" × "))}
+        ${previewRow("Зона поворота", [m.corner_zone_length_mm, m.corner_zone_width_mm].filter(Boolean).join(" × "))}
+        ${previewRow("N1 / N2 / ZN", [m.flight1_steps_count, m.flight2_steps_count, m.winder_steps_count].filter(Boolean).join(" / "))}
+        <div class="preview-scheme">${m.drawing_svg || `<span class="muted-text">Схема не сохранена.</span>`}</div>
+        ${project.type ? `<p class="muted-text small">Тип схемы: ${escapeHtml(project.type)}</p>` : ""}
+      </section>
+
+      <section class="preview-section">
+        <h3>Условия объекта</h3>
+        ${previewRow("Материал стен", m.wall_material)}
+        ${previewRow("Материал перекрытия", m.slab_material)}
+        ${previewRow("Тёплый пол", m.has_warm_floor)}
+        ${previewRow("Трубы", m.has_pipes ? "есть" : "нет")}
+        ${previewRow("Электрика", m.has_electricity ? "есть" : "нет")}
+        ${previewRow("Вентиляция", m.has_ventilation ? "есть" : "нет")}
+        ${previewRow("Препятствия", m.obstacles_comment)}
+      </section>
+
+      <section class="preview-section">
+        <h3>Комментарии</h3>
+        <p>${previewValue(m.general_comment, "Комментарий не заполнен.")}</p>
+        <h3>Требует уточнения</h3>
+        ${previewClarificationMarkup(m)}
+      </section>
+    </div>
+
+    <section class="preview-section preview-section-wide">
+      <h3>Фото</h3>
+      ${previewPhotoMarkup()}
+    </section>`;
 }
 
 function selectedPhotos() {
@@ -872,8 +1035,16 @@ function bind() {
   $("#signup-btn").addEventListener("click", () => signup().catch((e) => setMessage($("#auth-message"), e.message, "error")));
   $("#logout-btn").addEventListener("click", logout);
   $("#new-measurement-btn").addEventListener("click", showNewMeasurementModePicker);
+  $("#open-measurements-btn").addEventListener("click", openMeasurementsScreen);
+  $("#close-measurements-btn").addEventListener("click", closeMeasurementsScreen);
   $("#refresh-btn").addEventListener("click", () => loadMeasurements().catch((e) => alert(e.message)));
   $("#status-filter").addEventListener("change", renderList);
+  $("#measurement-search").addEventListener("input", renderList);
+  $("#measurement-preview").addEventListener("click", (event) => {
+    if (event.target.closest("[data-open-measurements]")) openMeasurementsScreen();
+    if (event.target.closest("[data-edit-measurement]")) editSelectedMeasurement();
+    if (event.target.closest("[data-print-preview]")) window.print();
+  });
   $("#measurement-form").addEventListener("submit", (event) => { event.preventDefault(); saveMeasurement().catch((e) => setMessage($("#form-message"), e.message, "error")); });
   $("#upload-photo-btn").addEventListener("click", () => uploadPhoto().catch((e) => setMessage($("#form-message"), e.message, "error")));
   $("#photos-list").addEventListener("click", (event) => {

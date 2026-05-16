@@ -320,7 +320,6 @@ body[data-measurement-mode="simple"] [data-simple-hidden],
   .top-actions{gap:6px;font-size:11px}.top-actions .btn{min-height:34px;padding:7px 10px;border-radius:10px}
   main{width:100%;margin:6px 0 58px;padding:0 6px}
   .toolbar{grid-template-columns:1fr 1fr;margin:0 0 8px;gap:6px;padding:0}.toolbar select{grid-column:1/-1;min-height:38px}.toolbar .btn{min-height:38px;padding:8px 10px;border-radius:12px}
-  body:has(#measurement-form:not(.hidden)) .toolbar,
   body:has(#measurement-form:not(.hidden)) .list-panel{display:none!important}
   .layout{display:block}.detail-panel.card{border:0;border-radius:0;box-shadow:none;padding:6px;min-height:auto;background:transparent}.empty-state{min-height:45vh}
   .form-head{margin:0 0 8px;gap:8px}.form-head h2{font-size:20px}.form-head-side{gap:6px}.badge{padding:5px 9px;font-size:11px}
@@ -332,4 +331,190 @@ body[data-measurement-mode="simple"] [data-simple-hidden],
 }
 @media (min-width: 721px) and (max-width: 900px){
   .layout{grid-template-columns:260px minmax(0,1fr)}.list-panel,.detail-panel{padding:12px}.form-actions .btn{min-height:42px}
+}
+
+/* issue #5: separate measurements screen and read-only preview */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.workspace-toolbar {
+  position: sticky;
+  top: 74px;
+  z-index: 7;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, .92);
+  backdrop-filter: blur(12px);
+}
+.workspace-layout { grid-template-columns: minmax(0, 1fr); }
+.measurements-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  padding: 16px;
+  overflow: auto;
+  background: rgba(15, 23, 42, .34);
+}
+.measurements-screen-card {
+  width: min(960px, 100%);
+  min-height: min(760px, calc(100vh - 32px));
+  margin: 0 auto;
+  padding: 18px;
+}
+.measurements-screen-head,
+.preview-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+.measurements-screen-head h2,
+.preview-head h2 { margin: 0; }
+.measurements-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 220px;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.measurements-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.measurements-summary span {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #f8fafc;
+  padding: 7px 10px;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 800;
+}
+.measurement-preview { display: grid; gap: 16px; }
+.preview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.preview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+.preview-section {
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: #fff;
+  padding: 14px;
+}
+.preview-section h3 { margin: 0 0 10px; }
+.preview-section-wide { grid-column: 1 / -1; }
+.preview-row {
+  display: grid;
+  grid-template-columns: minmax(110px, .8fr) minmax(0, 1.2fr);
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid #f1f5f9;
+}
+.preview-row:last-child { border-bottom: 0; }
+.preview-row span { color: var(--muted); font-size: 13px; }
+.preview-row b { word-break: break-word; }
+.preview-scheme {
+  min-height: 220px;
+  display: grid;
+  place-items: center;
+  margin-top: 12px;
+  overflow: hidden;
+  border: 1px dashed var(--line);
+  border-radius: 16px;
+  background: #f8fafc;
+}
+.preview-scheme svg { width: 100%; height: auto; max-height: 360px; }
+.preview-photos {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+}
+.preview-photo-card {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 10px;
+  overflow: hidden;
+}
+.preview-photo-thumb {
+  aspect-ratio: 4 / 3;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: #e5e7eb;
+  color: var(--muted);
+  font-weight: 900;
+}
+.preview-photo-card span {
+  color: var(--muted);
+  font-size: 11px;
+  word-break: break-all;
+}
+
+@media (max-width: 768px) {
+  .workspace-toolbar { top: 0; }
+  .measurements-screen { padding: 10px; }
+  .measurements-screen-card { min-height: calc(100vh - 20px); padding: 14px; border-radius: 22px; }
+  .measurements-controls { grid-template-columns: 1fr; }
+  .preview-grid { grid-template-columns: 1fr; }
+  .preview-head { display: grid; }
+  .preview-actions { justify-content: stretch; display: grid; grid-template-columns: 1fr 1fr; }
+  .preview-actions .btn { width: 100%; min-height: 42px; }
+  .preview-actions a:last-child { grid-column: 1 / -1; }
+}
+
+@media (max-width: 430px) {
+  .workspace-toolbar { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+  .workspace-toolbar #refresh-btn { grid-column: 1 / -1; }
+  .detail-panel.card { padding: 10px; }
+  .measurements-screen { padding: 0; background: #f8fafc; }
+  .measurements-screen-card { min-height: 100vh; border: 0; border-radius: 0; box-shadow: none; padding: 12px; }
+  .measurements-screen-head { display: grid; gap: 8px; }
+  .measurements-screen-head .btn { width: 100%; }
+  .measurements-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .measurement-item { padding: 12px; border-radius: 16px; }
+  .preview-section { padding: 12px; border-radius: 16px; }
+  .preview-row { grid-template-columns: 1fr; gap: 2px; }
+  .preview-scheme { min-height: 260px; }
+}
+
+@media (max-width: 390px) {
+  main { padding: 0 4px; }
+  .workspace-toolbar .btn { min-height: 38px; padding: 8px 9px; border-radius: 12px; }
+  .measurements-screen-card { padding: 10px; }
+  .preview-actions { grid-template-columns: 1fr; }
+  .preview-actions a:last-child { grid-column: auto; }
+  .preview-photos { grid-template-columns: 1fr; }
+}
+
+@media print {
+  .topbar,
+  .workspace-toolbar,
+  .measurements-screen,
+  .preview-actions,
+  .technical-actions,
+  .tabs,
+  .form-actions { display: none !important; }
+  main { width: 100%; margin: 0; }
+  .detail-panel.card,
+  .preview-section { box-shadow: none; border-color: #d1d5db; }
 }

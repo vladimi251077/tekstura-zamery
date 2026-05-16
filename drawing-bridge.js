@@ -605,8 +605,9 @@
     const tread = treadValues();
     const n1 = intField("flight1_steps_count", 0);
     const n2 = intField("flight2_steps_count", 0);
-    if (tread.b1 > 0 && n1 > 0) writeField("flight1_length_mm", n1 * tread.b1, true);
-    if (v.opening !== "straight" && tread.b2 > 0 && n2 > 0) writeField("flight2_length_mm", n2 * tread.b2, true);
+    const forceSimpleReady = !isDetailedMode();
+    if ((forceSimpleReady || projectState.autoCalc.flight1Length) && tread.b1 > 0 && n1 > 0) writeField("flight1_length_mm", n1 * tread.b1, true);
+    if ((forceSimpleReady || projectState.autoCalc.flight2Length) && tread.b2 > 0 && n2 > 0) writeField("flight2_length_mm", n2 * tread.b2, true);
   }
 
   function getSectionState() {
@@ -664,16 +665,19 @@
 
   function visibleParams() {
     const v = variant();
-    if (v.key === "empty_straight") return ["L", "W", "H", "T"];
-    if (v.mode === "empty") return ["M1", "B1", "M2", "B2", "ZL", "ZW", "H", "T"];
     if (!isDetailedMode()) {
+      if (v.key === "empty_straight") return ["L", "W", "H", "T"];
+      if (v.mode === "empty") return ["M1", "B1", "M2", "B2", "ZL", "ZW", "H", "T"];
       if (v.key === "ready_straight") return ["B1", "N1"];
       if (v.turn === "winder") return ["B1", "N1", "B2", "N2", "ZN"];
       return ["B1", "N1", "B2", "N2"];
     }
-    const tread = projectState?.treadMode?.sameTread !== false ? ["b"] : (v.key === "ready_straight" ? ["b1"] : ["b1", "b2"]);
-    if (v.key === "ready_straight") return ["B1", "N1", "h", ...tread];
-    return ["B1", "N1", "B2", "N2", ...(v.turn === "winder" ? ["ZN"] : []), "h", ...tread];
+    const tread = projectState?.treadMode?.sameTread !== false ? ["b"] : ["b1", "b2"];
+    const withOptionalH = (items) => [...items, "H"];
+    if (v.key === "empty_straight") return withOptionalH(["L", "W"]);
+    if (v.mode === "empty") return withOptionalH(["M1", "B1", "M2", "B2", "ZL", "ZW"]);
+    if (v.key === "ready_straight") return withOptionalH(["M1", "B1", "N1", "h", ...(projectState?.treadMode?.sameTread !== false ? ["b"] : ["b1"])]);
+    return withOptionalH(["M1", "B1", "N1", "M2", "B2", "N2", "ZL", "ZW", "ZN", "h", ...tread]);
   }
 
   const FIELD_META = {

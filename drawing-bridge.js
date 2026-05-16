@@ -395,6 +395,10 @@
     return isDetailedMode() || currentMode === "empty" || currentMode === "ready";
   }
 
+  function shouldRenderAscent() {
+    return variant().mode === "empty";
+  }
+
   function setMeasurementMode(mode) {
     projectState.measurementMode = mode === "detailed" ? "detailed" : "simple";
     saveState();
@@ -1398,7 +1402,7 @@
     const showSiteMarks = shouldRenderSiteMarks();
     const walls = showSiteMarks ? renderWalls(geometry, tr) : "";
     const windows = showSiteMarks ? renderWindows(geometry, tr) : "";
-    const ascent = showSiteMarks ? renderAscent(geometry, tr) : "";
+    const ascent = showSiteMarks && shouldRenderAscent() ? renderAscent(geometry, tr) : "";
     const balustrade = showSiteMarks ? renderTopBalustrade(geometry, tr) : "";
     const edges = showSiteMarks ? renderEdgeExtensions(geometry, tr) : "";
     const obstacles = showSiteMarks ? renderObstacles(geometry, tr) : "";
@@ -1555,6 +1559,7 @@
   }
 
   function renderAscent(geometry, tr) {
+    if (!shouldRenderAscent()) return "";
     const a = projectState.ascent || DEFAULT_PROJECT.ascent;
     if (a.show === false) return "";
     const items = [];
@@ -2264,12 +2269,13 @@
     const svgText = renderSvg(geometry);
     lastSvg = svgText;
     const detailed = isDetailedMode();
+    const ascentBlock = shouldRenderAscent() ? section("ascent", "Направление подъёма", ascentSection()) : "";
     const leftSections = detailed
       ? `
         ${section("frame", "Основные размеры каркаса", frameSection())}
         ${section("actions", "Действия", actionsSection())}
         ${section("walls", "Стены / открытые стороны", wallsSection())}
-        ${section("ascent", "Направление подъёма", ascentSection())}
+        ${ascentBlock}
         ${section("upperBalustrade", "Верхняя балюстрада", upperBalustradeSection())}
         ${section("siteMarks", "Стены / продолжение / препятствия", siteMarksSection())}
         ${section("windows", "Окна и проёмы в стенах", windowsSection(geometry))}
@@ -2278,7 +2284,7 @@
       `
       : `
         ${section("frame", "Основные размеры", frameSection())}
-        ${section("ascent", "Направление подъёма", ascentSection())}
+        ${ascentBlock}
         ${section("upperBalustrade", "Верхняя балюстрада", upperBalustradeSection())}
         ${section("siteMarks", "Стены / продолжение / препятствия", siteMarksSection())}
         ${section("comments", "Комментарий", commentsSection())}

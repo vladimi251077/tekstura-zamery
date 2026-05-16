@@ -3,8 +3,9 @@
   const STYLE_ID = "drawing-bridge-style-v14";
   const SECTION_STORAGE_KEY = "tekstura:drawing-bridge:sections:v15-simple";
 
-  const VIEW_W = 1100;
-  const VIEW_H = 760;
+  const DESKTOP_VIEW = { w: 1100, h: 760 };
+  const TABLET_VIEW = { w: 960, h: 780 };
+  const PHONE_VIEW = { w: 820, h: 1100 };
   const DEFAULT_STEP_DEPTH = 250;
   const DEFAULT_RISER = 180;
   const DEFAULT_FINISH_THICKNESS = 40;
@@ -1285,7 +1286,13 @@
     return result;
   }
 
-  function fitTransform(geometry) {
+  function drawingViewport() {
+    if (window.matchMedia?.("(max-width: 430px)")?.matches) return PHONE_VIEW;
+    if (window.matchMedia?.("(max-width: 1000px)")?.matches) return TABLET_VIEW;
+    return DESKTOP_VIEW;
+  }
+
+  function fitTransform(geometry, viewport = drawingViewport()) {
     const points = [];
     geometry.rects.forEach((r) => points.push({ x: r.x, y: r.y }, { x: r.x + r.w, y: r.y + r.h }));
     geometry.winders.forEach((poly) => poly.points.forEach((point) => points.push(point)));
@@ -1296,12 +1303,15 @@
     const maxY = Math.max(...points.map((p) => p.y));
     const width = Math.max(1, maxX - minX);
     const height = Math.max(1, maxY - minY);
-    const pad = 165;
-    const scale = Math.min((VIEW_W - pad * 2) / width, (VIEW_H - pad * 2) / height);
-    const x0 = (VIEW_W - width * scale) / 2 - minX * scale;
-    const y0 = (VIEW_H - height * scale) / 2 - minY * scale + 20;
+    const margin = fitMargins(geometry, viewport);
+    const innerW = Math.max(1, viewport.w - margin.left - margin.right);
+    const innerH = Math.max(1, viewport.h - margin.top - margin.bottom);
+    const scale = Math.min(innerW / width, innerH / height);
+    const x0 = margin.left + (innerW - width * scale) / 2 - minX * scale;
+    const y0 = margin.top + (innerH - height * scale) / 2 - minY * scale;
     return {
       scale,
+      margin,
       map: (point) => ({ x: x0 + point.x * scale, y: y0 + point.y * scale }),
       rect: (r) => {
         const a = { x: x0 + r.x * scale, y: y0 + r.y * scale };
@@ -1310,14 +1320,55 @@
     };
   }
 
+  function fitMargins(geometry, viewport = drawingViewport()) {
+    const mobile = viewport.w !== DESKTOP_VIEW.w || viewport.h !== DESKTOP_VIEW.h;
+    const margin = {
+      top: mobile ? 54 : 60,
+      right: mobile ? 34 : 44,
+      bottom: mobile ? 34 : 44,
+      left: mobile ? 34 : 44,
+    };
+    const dimensionLabelGap = mobile ? 24 : 30;
+    const sideLabelGap = mobile ? 18 : 24;
+    const markerGap = 12;
+    const reserve = (side, value) => {
+      margin[side] = Math.max(margin[side], value);
+    };
+
+    geometry.dimensions.forEach((dim) => {
+      const offset = dim.offset || 60;
+      if (dim.side === "top") reserve("top", offset + dimensionLabelGap);
+      else if (dim.side === "bottom") reserve("bottom", offset + dimensionLabelGap);
+      else if (dim.side === "left") reserve("left", offset + sideLabelGap);
+      else reserve("right", offset + sideLabelGap);
+    });
+
+    const showSiteMarks = isDetailedMode() || variant().mode === "empty";
+    if (showSiteMarks) {
+      reserve("top", margin.top + markerGap);
+      reserve("right", margin.right + markerGap);
+      reserve("bottom", margin.bottom + markerGap);
+      reserve("left", margin.left + markerGap);
+    }
+
+    return margin;
+  }
+
   function renderSvg(geometry) {
-    const tr = fitTransform(geometry);
+    const viewport = drawingViewport();
+    const tr = fitTransform(geometry, viewport);
     const defs = `<defs>
       <marker id="db-arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 Z" fill="#0f172a"/></marker>
       <marker id="db-ascent-arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 Z" fill="#2563eb"/></marker>
       <marker id="db-tick" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto"><path d="M2,2 L6,6 M6,2 L2,6" stroke="#0f172a" stroke-width="1.5"/></marker>
     </defs>`;
-    const grid = Array.from({ length: 46 }, (_, i) => `<line class="grid-line" x1="${i * 25}" y1="0" x2="${i * 25}" y2="${VIEW_H}"/><line class="grid-line" x1="0" y1="${i * 25}" x2="${VIEW_W}" y2="${i * 25}"/>`).join("");
+    const gridCols = Math.ceil(viewport.w / 25) + 1;
+    const gridRows = Math.ceil(viewport.h / 25) + 1;
+    const grid = Array.from({ length: Math.max(gridCols, gridRows) }, (_, i) => {
+      const x = i * 25;
+      const y = i * 25;
+      return `${x <= viewport.w ? `<line class="grid-line" x1="${x}" y1="0" x2="${x}" y2="${viewport.h}"/>` : ""}${y <= viewport.h ? `<line class="grid-line" x1="0" y1="${y}" x2="${viewport.w}" y2="${y}"/>` : ""}`;
+    }).join("");
     const rects = geometry.rects.map((r) => renderRect(r, tr)).join("");
     const winders = geometry.winders.map((poly) => renderWinder(poly, tr)).join("");
     const lines = geometry.lines.map((line) => renderLine(line, tr)).join("");
@@ -1331,7 +1382,7 @@
     const edges = showSiteMarks ? renderEdgeExtensions(geometry, tr) : "";
     const obstacles = showSiteMarks ? renderObstacles(geometry, tr) : "";
     const title = `<text class="caption" x="28" y="38">${escapeHtml(geometry.title)}</text>`;
-    return `<svg class="db-svg" viewBox="0 0 ${VIEW_W} ${VIEW_H}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Замерная схема лестницы">${defs}<rect width="${VIEW_W}" height="${VIEW_H}" fill="#fff"/>${grid}${title}<g>${rects}${winders}${lines}${route}${walls}${windows}${ascent}${balustrade}${edges}${obstacles}${dimensions}</g></svg>`;
+    return `<svg class="db-svg" viewBox="0 0 ${viewport.w} ${viewport.h}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Замерная схема лестницы">${defs}<rect width="${viewport.w}" height="${viewport.h}" fill="#fff"/>${grid}${title}<g>${rects}${winders}${lines}${route}${walls}${windows}${ascent}${balustrade}${edges}${obstacles}${dimensions}</g></svg>`;
   }
 
   function renderRect(r, tr) {

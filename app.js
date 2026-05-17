@@ -4,8 +4,8 @@ const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const SUPABASE_PROJECT_REF = new URL(SUPABASE_URL).hostname.split(".")[0];
 const SUPABASE_AUTH_STORAGE_KEY = `sb-${SUPABASE_PROJECT_REF}-auth-token`;
 const OFFLINE_STARTUP_MESSAGE = "Офлайн. Интернет недоступен. Можно создать локальный TEMP-черновик: данные и размеры сохранятся в этом телефоне.";
-const LOCAL_OFFLINE_DRAFT_MESSAGE = "Это локальный офлайн-черновик. Фото и раздел для изготовителя будут доступны после синхронизации в Supabase.";
-const PHOTO_OFFLINE_DRAFT_MESSAGE = "Фото для офлайн-черновика будут доступны после синхронизации.";
+const LOCAL_OFFLINE_DRAFT_MESSAGE = "Это локальный офлайн-черновик. Раздел для изготовителя будет доступен после синхронизации в Supabase.";
+const PHOTO_OFFLINE_DRAFT_MESSAGE = "Фото сохранены в телефоне. Они будут отправлены в Supabase после синхронизации.";
 const PHOTO_DRAFT_SAVE_REQUIRED_MESSAGE = "Фото не загружено: сначала сохраните черновик.";
 const PHOTO_UPLOAD_OFFLINE_MESSAGE = "Фото нельзя загрузить без интернета. Для офлайн-черновика фото будут добавлены следующим этапом.";
 const OFFLINE_SYNC_UNAVAILABLE_MESSAGE = "Появится интернет — можно будет синхронизировать.";
@@ -318,6 +318,11 @@ function makeLocalId() {
   return `local_${Date.now()}_${Math.random().toString(16).slice(2)}`;
 }
 
+function makeLocalPhotoId() {
+  if (window.crypto?.randomUUID) return `photo_local_${window.crypto.randomUUID()}`;
+  return `photo_local_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+}
+
 async function createLocalOfflineDraft() {
   if (!state.user) {
     showOfflineState("Офлайн. Для создания локального черновика нужен первый вход онлайн на этом телефоне.");
@@ -373,8 +378,8 @@ async function openOfflineDraft(localId) {
     }
   }
   state.selected = offlineDraftToMeasurement(draft);
-  state.photos = [];
-  state.photoScopeId = null;
+  state.photos = await listLocalOfflinePhotos(draft.local_id);
+  state.photoScopeId = draft.local_id;
   state.hiddenForeignPhotos = 0;
   fillForm(state.selected);
   closeMeasurementsScreen();
@@ -898,7 +903,7 @@ function activateTab(tabName) {
 
 async function requestActivateTab(tabName) {
   if (isLocalOfflineDraft() && tabName === "photos") {
-    setMessage($("#form-message"), offlineDraftMessage(), "error");
+    setMessage($("#form-message"), offlineDraftPhotoMessage(), "ok");
   }
   if (activeTabName() === "photos" && tabName !== "photos") {
     const saved = await ensurePendingPhotoSaved("переходом дальше");
@@ -1627,6 +1632,12 @@ async function setStatus(status, extra = {}, options = {}) {
 }
 
 async function loadPhotos(measurementId) {
+  if (isLocalOfflineDraft()) {
+    state.photos = await listLocalOfflinePhotos(state.selected.local_id);
+    state.photoScopeId = state.selected.local_id;
+    state.hiddenForeignPhotos = 0;
+    return;
+  }
   if (!supabaseClient || !navigator.onLine) {
     showOfflineState();
     return;
@@ -1799,7 +1810,7 @@ function previewDimensionMarkup(measurement, project) {
 
 function photoPublicUrl(photo) {
   const path = String(photo?.file_path || "").trim();
-  if (!path) return "";
+  if (!path || !supabaseClient) return "";
   try {
     return supabaseClient.storage.from("measurement-photos").getPublicUrl(path).data?.publicUrl || "";
   } catch (error) {
@@ -1808,12 +1819,26 @@ function photoPublicUrl(photo) {
   }
 }
 
+function localPhotoObjectUrl(photo) {
+  if (!photo?.blob) return "";
+  try {
+    return URL.createObjectURL(photo.blob);
+  } catch (error) {
+    console.warn("Не удалось создать локальное превью фото", error);
+    return "";
+  }
+}
+
+function photoPreviewUrl(photo) {
+  return photo?.local_photo_id ? localPhotoObjectUrl(photo) : photoPublicUrl(photo);
+}
+
 function previewPhotoMarkup() {
   const photos = selectedPhotos();
   if (!photos.length) return `<p class="muted-text">Фото ещё не добавлены.</p>`;
   return `<div class="preview-photos">${photos.map((photo) => {
     const type = photo.photo_type || "Фото";
-    const publicUrl = photoPublicUrl(photo);
+    const publicUrl = photoPreviewUrl(photo);
     const media = publicUrl
       ? `<img src="${escapeHtml(publicUrl)}" alt="${escapeHtml(type)}" loading="lazy" />`
       : `<div class="preview-photo-thumb">Фото</div>`;
@@ -1906,9 +1931,69 @@ function renderPreview() {
 }
 
 function selectedPhotos() {
-  if (isLocalOfflineDraft()) return [];
+  if (isLocalOfflineDraft()) {
+    if (!state.selected?.local_id || state.photoScopeId !== state.selected.local_id) return [];
+    return (Array.isArray(state.photos) ? state.photos : []).filter((photo) => photo.local_draft_id === state.selected.local_id);
+  }
   if (!state.selected?.id || state.photoScopeId !== state.selected.id) return [];
   return filterPhotosForMeasurement(state.photos, state.selected);
+}
+
+async function listLocalOfflinePhotos(localDraftId = state.selected?.local_id) {
+  if (!localDraftId) return [];
+  return await (window.TeksturaOfflineDB?.listOfflinePhotosByDraft?.(localDraftId) || Promise.resolve([]));
+}
+
+function formatPhotoSize(sizeBytes) {
+  const size = Number(sizeBytes || 0);
+  if (!size) return "0 Б";
+  if (size < 1024) return `${size} Б`;
+  if (size < 1024 * 1024) return `${Math.round(size / 102.4) / 10} КБ`;
+  return `${Math.round(size / 1024 / 102.4) / 10} МБ`;
+}
+
+function localPhotoFileName(fileName = "photo.jpg") {
+  const base = String(fileName || "photo").replace(/\.[^.]+$/, "").replace(/[^a-zA-Z0-9а-яА-ЯёЁ_-]+/g, "_").slice(0, 60) || "photo";
+  return `${base}.jpg`;
+}
+
+function loadImageFromBlob(blob) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(blob);
+    const image = new Image();
+    image.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Не удалось прочитать фото для сжатия."));
+    };
+    image.src = url;
+  });
+}
+
+async function compressPhotoForOffline(file) {
+  try {
+    const maxSide = 1800;
+    const quality = 0.82;
+    const source = await loadImageFromBlob(file);
+    const scale = Math.min(1, maxSide / Math.max(source.width || maxSide, source.height || maxSide));
+    const width = Math.max(1, Math.round((source.width || maxSide) * scale));
+    const height = Math.max(1, Math.round((source.height || maxSide) * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Canvas недоступен.");
+    context.drawImage(source, 0, 0, width, height);
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
+    if (!blob) throw new Error("Сжатие фото не вернуло файл.");
+    return { blob, fileName: localPhotoFileName(file.name), mimeType: blob.type || "image/jpeg" };
+  } catch (error) {
+    console.warn("Фото сохранено без сжатия", error);
+    return { blob: file, fileName: file.name || "photo.jpg", mimeType: file.type || "image/jpeg" };
+  }
 }
 
 function photoStatusElement() {
@@ -1943,21 +2028,21 @@ function setPhotoInputsDisabled(disabled) {
 }
 
 function handlePhotoInputChange(event) {
+  const changedInput = event.currentTarget;
+  state.pendingPhotoFiles = Array.from(changedInput?.files || []);
+  photoFileInputs().forEach((input) => {
+    if (input !== changedInput) input.value = "";
+  });
   if (isLocalOfflineDraft()) {
-    clearPhotoInputs();
-    setPhotoStatus(offlineDraftPhotoMessage(), "error");
-    setMessage($("#form-message"), offlineDraftPhotoMessage(), "error");
+    if (!hasPendingPhotoFile()) return updatePhotoStatusFromInput();
+    setPhotoStatus("Сохраняю фото в телефоне...", "pending");
+    ensurePendingPhotoSaved("выбором фото").catch((e) => setMessage($("#form-message"), userFacingError(e), "error"));
     return;
   }
   if (!navigator.onLine) {
     showOfflinePhotoUploadBlocked();
     return;
   }
-  const changedInput = event.currentTarget;
-  state.pendingPhotoFiles = Array.from(changedInput?.files || []);
-  photoFileInputs().forEach((input) => {
-    if (input !== changedInput) input.value = "";
-  });
   if (!hasPendingPhotoFile()) return updatePhotoStatusFromInput();
   setPhotoStatus(state.selected?.id ? "Фото выбрано. Начинаю загрузку..." : "Сначала сохраняю черновик...", "pending");
   ensurePendingPhotoSaved("выбором фото").catch((e) => setMessage($("#form-message"), userFacingError(e), "error"));
@@ -1972,7 +2057,11 @@ function setPhotoStatus(text, type = "") {
 
 function updatePhotoStatusFromInput() {
   if (state.photoUploadPromise) return;
-  if (isLocalOfflineDraft()) return setPhotoStatus(offlineDraftPhotoMessage(), "error");
+  if (isLocalOfflineDraft()) {
+    if (hasPendingPhotoFile()) return setPhotoStatus("Сохраняю фото в телефоне...", "pending");
+    if (selectedPhotos().length) return setPhotoStatus(`${offlineDraftPhotoMessage()} Всего: ${selectedPhotos().length}.`, "ok");
+    return setPhotoStatus(offlineDraftPhotoMessage(), "ok");
+  }
   if (hasPendingPhotoFile()) return setPhotoStatus(state.selected?.id ? "Фото выбрано. Начинаю загрузку..." : "Сначала сохраняю черновик...", "pending");
   if (selectedPhotos().length) return setPhotoStatus(`Фото сохранены: ${selectedPhotos().length}.`, "ok");
   setPhotoStatus("Фото не выбрано.");
@@ -1991,6 +2080,23 @@ async function ensurePendingPhotoSaved(actionLabel = "переходом дал�
     }
   }
   if (!hasPendingPhotoFile()) return true;
+  if (isLocalOfflineDraft()) {
+    try {
+      setPhotoStatus("Сохраняю фото в телефоне...", "pending");
+      state.photoUploadPromise = uploadPhoto({ auto: true });
+      const savedPhotos = await state.photoUploadPromise;
+      const savedCount = Array.isArray(savedPhotos) ? savedPhotos.length : 0;
+      if (savedCount <= 0) return false;
+      setMessage($("#form-message"), `Фото сохранены в телефоне: ${savedCount}.`, "ok");
+      return true;
+    } catch (error) {
+      setMessage($("#form-message"), `Фото не сохранено в телефоне: ${userFacingError(error)}`, "error");
+      setPhotoStatus("Фото не сохранено в телефоне. Попробуйте ещё раз.", "error");
+      return false;
+    } finally {
+      state.photoUploadPromise = null;
+    }
+  }
   if (!navigator.onLine) {
     showOfflinePhotoUploadBlocked();
     return false;
@@ -2027,8 +2133,27 @@ function renderPhotos() {
   const photos = selectedPhotos();
   const title = escapeHtml(state.selected.number || "новый замер");
   if (isLocalOfflineDraft()) {
-    box.innerHTML = `<div class="photo-scope-note"><b>Фото этого замера:</b> ${title}.</div><p class="muted-text">${escapeHtml(offlineDraftPhotoMessage())}</p>`;
-    setPhotoStatus(offlineDraftPhotoMessage(), "error");
+    const note = `<div class="photo-scope-note"><b>Фото этого TEMP-черновика:</b> ${title}. ${escapeHtml(offlineDraftPhotoMessage())}</div>`;
+    if (!photos.length) {
+      box.innerHTML = `${note}<p class="muted-text">Локальные фото ещё не добавлены.</p>`;
+      updatePhotoStatusFromInput();
+      return;
+    }
+    box.innerHTML = `${note}${photos.map((p) => {
+      const previewUrl = localPhotoObjectUrl(p);
+      const createdAt = formatOfflineDraftDate(p.created_at);
+      return `
+    <div class="photo-card" data-photo-id="${escapeHtml(p.local_photo_id)}" data-local-draft-id="${escapeHtml(p.local_draft_id)}">
+      ${previewUrl ? `<img src="${escapeHtml(previewUrl)}" alt="${escapeHtml(p.photo_type || "Фото")}" loading="lazy" />` : `<div style="aspect-ratio:4/3;display:grid;place-items:center;background:#e5e7eb;">Фото</div>`}
+      <div class="photo-card-body">
+        <b>${escapeHtml(p.photo_type || "Фото")}</b>
+        <span>${escapeHtml(formatPhotoSize(p.size_bytes))}</span>
+        <span>${escapeHtml(createdAt)}</span>
+        <button type="button" class="btn danger photo-delete-btn" data-delete-photo-id="${escapeHtml(p.local_photo_id)}">Удалить с телефона</button>
+      </div>
+    </div>`;
+    }).join("")}`;
+    updatePhotoStatusFromInput();
     return;
   }
   const hiddenNote = state.hiddenForeignPhotos > 0 ? ` <span class="photo-warning">Скрыто чужих/старых записей: ${state.hiddenForeignPhotos}.</span>` : "";
@@ -2081,10 +2206,57 @@ async function uploadSinglePhotoFile(file, photoType, selectedId, index, total) 
 
 async function uploadPhoto(options = {}) {
   if (isLocalOfflineDraft()) {
-    clearPhotoInputs();
-    setPhotoStatus(offlineDraftPhotoMessage(), "error");
-    setMessage($("#form-message"), offlineDraftPhotoMessage(), "error");
-    return [];
+    if (!window.TeksturaOfflineDB?.addOfflinePhoto) {
+      setPhotoStatus("IndexedDB недоступен: фото нельзя сохранить в телефоне.", "error");
+      setMessage($("#form-message"), "IndexedDB недоступен: фото нельзя сохранить в телефоне.", "error");
+      return [];
+    }
+    const files = pendingPhotoFiles();
+    if (!files.length) {
+      updatePhotoStatusFromInput();
+      return [];
+    }
+    const photoType = $("#photo-type")?.value || "Другое";
+    const savedPhotos = [];
+    setPhotoInputsDisabled(true);
+    try {
+      for (const [index, file] of files.entries()) {
+        setPhotoStatus(`Сжимаю и сохраняю фото ${index + 1} из ${files.length} в телефоне...`, "loading");
+        const compressed = await compressPhotoForOffline(file);
+        const now = new Date().toISOString();
+        const photo = {
+          local_photo_id: makeLocalPhotoId(),
+          local_draft_id: state.selected.local_id,
+          temp_number: state.selected.number || "TEMP-001",
+          blob: compressed.blob,
+          file_name: compressed.fileName,
+          mime_type: compressed.mimeType,
+          size_bytes: compressed.blob.size,
+          photo_type: photoType,
+          sync_status: "local_only",
+          created_at: now,
+          updated_at: now,
+        };
+        await window.TeksturaOfflineDB.addOfflinePhoto(photo);
+        savedPhotos.push(photo);
+      }
+      state.photos = await listLocalOfflinePhotos(state.selected.local_id);
+      state.photoScopeId = state.selected.local_id;
+      clearPhotoInputs();
+      renderPhotos();
+      renderChecks();
+      setPhotoStatus(`Фото сохранены в телефоне: ${savedPhotos.length}.`, "ok");
+      if (!options.auto) setMessage($("#form-message"), `Фото сохранены в телефоне: ${savedPhotos.length}.`, "ok");
+      return savedPhotos;
+    } catch (error) {
+      state.pendingPhotoFiles = files.slice(savedPhotos.length);
+      const status = `Фото не сохранены в телефоне: ${savedPhotos.length} из ${files.length}. Ошибка: ${userFacingError(error)}`;
+      setPhotoStatus(status, "error");
+      setMessage($("#form-message"), status, "error");
+      throw error;
+    } finally {
+      setPhotoInputsDisabled(false);
+    }
   }
   if (!navigator.onLine) {
     showOfflinePhotoUploadBlocked();
@@ -2148,7 +2320,16 @@ async function uploadPhoto(options = {}) {
 
 async function deletePhoto(photoId) {
   if (isLocalOfflineDraft()) {
-    setMessage($("#form-message"), offlineDraftMessage(), "error");
+    if (!photoId) return;
+    const photo = selectedPhotos().find((item) => item.local_photo_id === photoId);
+    if (!photo) return setMessage($("#form-message"), "Это локальное фото не относится к открытому TEMP-черновику.", "error");
+    if (!confirm(`Удалить фото «${photo.photo_type || "Фото"}» только с этого телефона?`)) return;
+    await window.TeksturaOfflineDB?.deleteOfflinePhoto?.(photoId);
+    state.photos = await listLocalOfflinePhotos(state.selected.local_id);
+    state.photoScopeId = state.selected.local_id;
+    renderPhotos();
+    renderChecks();
+    setMessage($("#form-message"), "Локальное фото удалено с телефона.", "ok");
     return;
   }
   if (!supabaseClient || !navigator.onLine) {

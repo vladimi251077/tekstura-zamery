@@ -2,11 +2,12 @@
   "use strict";
 
   const DB_NAME = "tekstura-offline-shell";
-  const DB_VERSION = 2;
+  const DB_VERSION = 3;
   const STORES = {
     metadata: "metadata",
     offlineDrafts: "offline_drafts",
     syncQueue: "sync_queue",
+    offlinePhotos: "offline_photos",
   };
 
   function isSupported() {
@@ -29,6 +30,14 @@
       queue.createIndex("status", "status", { unique: false });
       queue.createIndex("type", "type", { unique: false });
       queue.createIndex("created_at", "created_at", { unique: false });
+    }
+    if (!db.objectStoreNames.contains(STORES.offlinePhotos)) {
+      const photos = db.createObjectStore(STORES.offlinePhotos, { keyPath: "local_photo_id" });
+      photos.createIndex("local_draft_id", "local_draft_id", { unique: false });
+      photos.createIndex("temp_number", "temp_number", { unique: false });
+      photos.createIndex("sync_status", "sync_status", { unique: false });
+      photos.createIndex("created_at", "created_at", { unique: false });
+      photos.createIndex("updated_at", "updated_at", { unique: false });
     }
   }
 
@@ -99,6 +108,43 @@
     };
   }
 
+  function normalizeOfflinePhoto(photo = {}) {
+    const now = new Date().toISOString();
+    return {
+      local_photo_id: photo.local_photo_id,
+      local_draft_id: photo.local_draft_id,
+      temp_number: photo.temp_number || "TEMP-001",
+      blob: photo.blob,
+      file_name: photo.file_name || "photo.jpg",
+      mime_type: photo.mime_type || photo.blob?.type || "image/jpeg",
+      size_bytes: Number(photo.size_bytes || photo.blob?.size || 0),
+      photo_type: photo.photo_type || "Другое",
+      sync_status: photo.sync_status || "local_only",
+      created_at: photo.created_at || now,
+      updated_at: photo.updated_at || now,
+      ...photo,
+    };
+  }
+
+  function addOfflinePhoto(photo) {
+    return withStore(STORES.offlinePhotos, "readwrite", (store) => store.put(normalizeOfflinePhoto(photo)));
+  }
+
+  async function listOfflinePhotosByDraft(localDraftId) {
+    if (!localDraftId) return [];
+    const photos = await withStore(STORES.offlinePhotos, "readonly", (store) => store.index("local_draft_id").getAll(localDraftId));
+    return (photos || []).sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
+  }
+
+  function deleteOfflinePhoto(localPhotoId) {
+    return withStore(STORES.offlinePhotos, "readwrite", (store) => store.delete(localPhotoId));
+  }
+
+  async function countOfflinePhotosByDraft(localDraftId) {
+    if (!localDraftId) return 0;
+    return await withStore(STORES.offlinePhotos, "readonly", (store) => store.index("local_draft_id").count(localDraftId)) || 0;
+  }
+
   function createOfflineDraft(draft) {
     return withStore(STORES.offlineDrafts, "readwrite", (store) => store.add(normalizeOfflineDraft(draft)));
   }
@@ -125,13 +171,17 @@
   }
 
   window.TeksturaOfflineDB = {
+    addOfflinePhoto,
     countOfflineDrafts,
+    countOfflinePhotosByDraft,
     createOfflineDraft,
     deleteOfflineDraft,
+    deleteOfflinePhoto,
     get,
     getOfflineDraft,
     isSupported,
     listOfflineDrafts,
+    listOfflinePhotosByDraft,
     putOfflineDraft,
     remove,
     set,

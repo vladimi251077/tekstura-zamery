@@ -156,6 +156,41 @@ function setMessage(el, text, type = "") {
   el.className = `form-message ${type}`.trim();
 }
 
+
+function shareInviteText(login) {
+  const selectedLogin = String(login || "ruslan").trim() || "ruslan";
+  return [
+    "Tekstura Замеры",
+    `Открой ссылку: ${location.origin}`,
+    `Логин: ${selectedLogin}`,
+    "Код выдаю отдельно.",
+    "На iPhone можно добавить иконку: Поделиться → На экран «Домой».",
+    "На Android: Chrome → ⋮ → Добавить на главный экран.",
+  ].join("\n");
+}
+
+function showShareFallback(text) {
+  const fallback = $("#share-fallback");
+  if (!fallback) return;
+  fallback.value = text;
+  fallback.classList.remove("hidden");
+  fallback.focus();
+  fallback.select();
+}
+
+async function copyShareInvite() {
+  const text = shareInviteText($("#share-login")?.value);
+  const fallback = $("#share-fallback");
+  fallback?.classList.add("hidden");
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    setMessage($("#share-message"), "Текст скопирован. Отправьте его замерщику в WhatsApp или Telegram.", "ok");
+    return;
+  }
+  showShareFallback(text);
+  setMessage($("#share-message"), "Автокопирование недоступно. Скопируйте текст из поля ниже вручную.", "error");
+}
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -1299,6 +1334,11 @@ function bind() {
   enhanceCommonInputs();
   $("#login-btn").addEventListener("click", () => login().catch((e) => setMessage($("#auth-message"), e.message, "error")));
   $("#signup-btn").addEventListener("click", () => signup().catch((e) => setMessage($("#auth-message"), e.message, "error")));
+  $("#copy-share-btn")?.addEventListener("click", () => copyShareInvite().catch(() => {
+    const text = shareInviteText($("#share-login")?.value);
+    showShareFallback(text);
+    setMessage($("#share-message"), "Автокопирование недоступно. Скопируйте текст из поля ниже вручную.", "error");
+  }));
   $("#logout-btn").addEventListener("click", logout);
   $("#new-measurement-btn").addEventListener("click", showNewMeasurementModePicker);
   $("#open-measurements-btn").addEventListener("click", openMeasurementsScreen);

@@ -13,7 +13,7 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" />
-    <link rel="stylesheet" href="./styles.css?v=20260517-pwa-share" />
+    <link rel="stylesheet" href="./styles.css?v=20260517-offline-drafts" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   </head>
   <body>
@@ -32,11 +32,22 @@
 
       <main>
         <section id="offline-startup" class="card offline-startup hidden" aria-live="polite">
-          <div>
-            <div class="eyebrow">Офлайн</div>
-            <p id="offline-startup-message">Офлайн. Интернет недоступен. В этом режиме пока можно только открыть приложение. Локальные замеры будут добавлены следующим этапом.</p>
+          <div class="offline-startup-main">
+            <div class="offline-startup-head">
+              <div>
+                <div class="eyebrow">Офлайн</div>
+                <p id="offline-startup-message">Офлайн. Интернет недоступен. Можно создать локальный TEMP-черновик: данные и размеры сохранятся в этом телефоне.</p>
+              </div>
+              <div class="offline-startup-actions">
+                <button id="create-offline-draft-btn" class="btn primary" type="button">Создать локальный черновик</button>
+                <button id="offline-retry-btn" class="btn secondary" type="button">Обновить</button>
+              </div>
+            </div>
+            <div class="offline-drafts-box">
+              <div class="offline-drafts-title">Локальные черновики на этом телефоне <span id="offline-drafts-count" class="small-chip">0</span></div>
+              <div id="offline-drafts-list" class="offline-drafts-list"></div>
+            </div>
           </div>
-          <button id="offline-retry-btn" class="btn secondary" type="button">Обновить</button>
         </section>
 
         <section id="setup-warning" class="card warning hidden">
@@ -351,8 +362,8 @@
         </section>
       </main>
     </div>
-    <script src="./offline-db.js?v=20260517-v1"></script>
-    <script src="./app.js?v=20260517-v25"></script>
+    <script src="./offline-db.js?v=20260517-v2"></script>
+    <script src="./app.js?v=20260517-v26"></script>
     <script src="./photo-preview.js?v=20260515-v14"></script>
     <script src="./details-enhance.js?v=20260515-v14"></script>
     <script src="./scheme-sketch.js?v=20260506-disabled"></script>

@@ -3,7 +3,8 @@ const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 
 const SUPABASE_PROJECT_REF = new URL(SUPABASE_URL).hostname.split(".")[0];
 const SUPABASE_AUTH_STORAGE_KEY = `sb-${SUPABASE_PROJECT_REF}-auth-token`;
-const OFFLINE_STARTUP_MESSAGE = "Офлайн. Интернет недоступен. В этом режиме пока можно только открыть приложение. Локальные замеры будут добавлены следующим этапом.";
+const OFFLINE_STARTUP_MESSAGE = "Офлайн. Интернет недоступен. Можно создать локальный TEMP-черновик: данные и размеры сохранятся в этом телефоне.";
+const LOCAL_OFFLINE_DRAFT_MESSAGE = "Это локальный офлайн-черновик. Отправка, фото и раздел для изготовителя будут доступны после синхронизации в следующем этапе.";
 const supabaseClient = window.supabase?.createClient ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
@@ -58,6 +59,9 @@ const state = {
   photoUploadPromise: null,
   pendingPhotoFiles: [],
   offlineStartup: false,
+  offlineDrafts: [],
+  offlineAutosaveTimer: null,
+  offlineAutosaveInFlight: null,
 };
 
 
@@ -109,14 +113,207 @@ function setOfflineStartupNotice(visible, message = OFFLINE_STARTUP_MESSAGE, can
   notice.classList.toggle("hidden", !visible);
   const messageElement = $("#offline-startup-message");
   if (messageElement) messageElement.textContent = message;
+  loadOfflineDrafts().catch((error) => console.warn("Offline drafts were not loaded", error));
   const refreshButton = $("#offline-retry-btn");
   if (refreshButton) refreshButton.disabled = !canRefresh;
+  const createButton = $("#create-offline-draft-btn");
+  if (createButton) createButton.disabled = !state.user;
 }
 
 function showOfflineState(message = OFFLINE_STARTUP_MESSAGE) {
   setOfflineStartupNotice(true, message, navigator.onLine);
   setMessage($("#auth-message"), message, "error");
   setMessage($("#form-message"), message, "error");
+}
+
+
+function isLocalOfflineDraft(measurement = state.selected) {
+  return Boolean(measurement?.local_id && measurement?.sync_status === "local_only");
+}
+
+function offlineDraftMessage() {
+  return LOCAL_OFFLINE_DRAFT_MESSAGE;
+}
+
+function offlineDraftToMeasurement(draft) {
+  const formData = draft?.form_data || {};
+  const measurement = formData.measurement || {};
+  return {
+    ...measurement,
+    local_id: draft.local_id,
+    number: draft.temp_number,
+    status: "Офлайн-черновик",
+    sync_status: draft.sync_status || "local_only",
+    created_at: draft.created_at,
+    updated_at: draft.updated_at,
+    clients: formData.client || {},
+    drawing_project_json: JSON.stringify(draft.drawing_project_json || safeJsonValue(measurement.drawing_project_json) || {}),
+    finish_dimensions_json: JSON.stringify(draft.finish_dimensions_json || safeJsonValue(measurement.finish_dimensions_json) || {}),
+    drawing_svg: draft.drawing_svg || measurement.drawing_svg || "",
+    measurer_name: draft.measurer_name || measurement.measurer_name || "",
+    measurer_login: draft.measurer_login || measurement.measurer_login || "",
+  };
+}
+
+function getOfflineDraftListContainer() {
+  return $("#offline-drafts-list");
+}
+
+function formatOfflineDraftDate(value) {
+  if (!value) return "Дата изменения неизвестна";
+  try {
+    return new Intl.DateTimeFormat("ru-RU", { dateStyle: "short", timeStyle: "short" }).format(new Date(value));
+  } catch {
+    return String(value);
+  }
+}
+
+async function loadOfflineDrafts() {
+  state.offlineDrafts = await (window.TeksturaOfflineDB?.listOfflineDrafts?.() || Promise.resolve([]));
+  renderOfflineDrafts();
+  return state.offlineDrafts;
+}
+
+function renderOfflineDrafts() {
+  const list = getOfflineDraftListContainer();
+  const count = $("#offline-drafts-count");
+  if (count) count.textContent = String(state.offlineDrafts.length);
+  if (!list) return;
+  if (!state.offlineDrafts.length) {
+    list.innerHTML = '<p class="muted-text small">Локальных черновиков пока нет.</p>';
+    return;
+  }
+  list.innerHTML = state.offlineDrafts.map((draft) => `
+    <div class="offline-draft-card" data-local-id="${escapeHtml(draft.local_id)}">
+      <div>
+        <b>${escapeHtml(draft.temp_number || "TEMP")}</b>
+        <span>Офлайн-черновик</span>
+        <small>Изменён: ${escapeHtml(formatOfflineDraftDate(draft.updated_at))}</small>
+      </div>
+      <div class="offline-draft-actions">
+        <button type="button" class="btn secondary" data-open-offline-draft="${escapeHtml(draft.local_id)}">Открыть</button>
+        <button type="button" class="btn danger" data-delete-offline-draft="${escapeHtml(draft.local_id)}">Удалить</button>
+      </div>
+    </div>`).join("");
+}
+
+function nextOfflineTempNumber(drafts = state.offlineDrafts) {
+  const next = drafts.reduce((max, draft) => {
+    const match = String(draft.temp_number || "").match(/^TEMP-(\d+)$/);
+    return match ? Math.max(max, Number(match[1])) : max;
+  }, 0) + 1;
+  return `TEMP-${String(next).padStart(3, "0")}`;
+}
+
+function makeLocalId() {
+  if (window.crypto?.randomUUID) return `local_${window.crypto.randomUUID()}`;
+  return `local_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+}
+
+async function createLocalOfflineDraft() {
+  if (!state.user) {
+    showOfflineState("Офлайн. Для создания локального черновика нужен первый вход онлайн на этом телефоне.");
+    return null;
+  }
+  if (!window.TeksturaOfflineDB?.createOfflineDraft) return setMessage($("#form-message"), "IndexedDB недоступен: локальный черновик нельзя создать.", "error");
+  await loadOfflineDrafts();
+  const identity = currentUserIdentity();
+  const now = new Date().toISOString();
+  const tempNumber = nextOfflineTempNumber();
+  const drawingProject = { schemaVersion: 2, measurementMode: MEASUREMENT_MODE_DEFAULT, type: "empty_straight", units: "mm" };
+  const draft = {
+    local_id: makeLocalId(),
+    temp_number: tempNumber,
+    sync_status: "local_only",
+    created_at: now,
+    updated_at: now,
+    form_data: {
+      client: { name: "", phone: "", address: "", city: "Казань" },
+      measurement: {
+        status: "Офлайн-черновик",
+        object_type: "Частный дом",
+        object_stage: "Черновая",
+        site_situation: "Пустой проём",
+        opening_type: "Прямой",
+        has_warm_floor: "Не знаю",
+        drawing_project_json: JSON.stringify(drawingProject),
+        drawing_svg: "",
+        finish_dimensions_json: "{}",
+      },
+    },
+    drawing_project_json: drawingProject,
+    finish_dimensions_json: {},
+    drawing_svg: "",
+    measurer_name: identity.name,
+    measurer_login: identity.login,
+  };
+  await window.TeksturaOfflineDB.createOfflineDraft(draft);
+  await loadOfflineDrafts();
+  await openOfflineDraft(draft.local_id);
+}
+
+async function openOfflineDraft(localId) {
+  const draft = await window.TeksturaOfflineDB?.getOfflineDraft?.(localId);
+  if (!draft) return setMessage($("#form-message"), "Локальный черновик не найден в этом телефоне.", "error");
+  state.selected = offlineDraftToMeasurement(draft);
+  state.photos = [];
+  state.photoScopeId = null;
+  state.hiddenForeignPhotos = 0;
+  fillForm(state.selected);
+  closeMeasurementsScreen();
+  showWorkspacePanel("edit");
+  renderPhotos();
+  renderChecks();
+  setMessage($("#form-message"), "Офлайн-черновик сохранён в телефоне", "ok");
+}
+
+async function deleteLocalOfflineDraft(localId) {
+  const draft = state.offlineDrafts.find((item) => item.local_id === localId);
+  if (!draft) return;
+  if (!confirm(`Удалить локальный черновик ${draft.temp_number || "TEMP"} только с этого телефона?`)) return;
+  await window.TeksturaOfflineDB?.deleteOfflineDraft?.(localId);
+  if (state.selected?.local_id === localId) {
+    state.selected = null;
+    showWorkspacePanel("empty");
+  }
+  await loadOfflineDrafts();
+}
+
+async function saveLocalOfflineDraftNow(options = {}) {
+  if (!isLocalOfflineDraft()) return null;
+  ensureDynamicMeasurementFields();
+  const { client, measurement } = getFormData();
+  const current = await window.TeksturaOfflineDB?.getOfflineDraft?.(state.selected.local_id);
+  const updatedAt = new Date().toISOString();
+  const draft = {
+    ...(current || {}),
+    local_id: state.selected.local_id,
+    temp_number: state.selected.number,
+    sync_status: "local_only",
+    created_at: current?.created_at || state.selected.created_at || updatedAt,
+    updated_at: updatedAt,
+    form_data: { client, measurement },
+    drawing_project_json: safeJsonValue(measurement.drawing_project_json) || {},
+    finish_dimensions_json: safeJsonValue(measurement.finish_dimensions_json) || {},
+    drawing_svg: measurement.drawing_svg || "",
+    measurer_name: state.selected.measurer_name || currentUserIdentity().name,
+    measurer_login: state.selected.measurer_login || currentUserIdentity().login,
+  };
+  await window.TeksturaOfflineDB?.putOfflineDraft?.(draft);
+  state.selected = offlineDraftToMeasurement(draft);
+  await loadOfflineDrafts();
+  if (!options.silent) setMessage($("#form-message"), "Офлайн-черновик сохранён в телефоне", "ok");
+  return state.selected;
+}
+
+function scheduleOfflineDraftAutosave() {
+  if (!isLocalOfflineDraft()) return;
+  clearTimeout(state.offlineAutosaveTimer);
+  state.offlineAutosaveTimer = setTimeout(() => {
+    state.offlineAutosaveInFlight = saveLocalOfflineDraftNow({ silent: true })
+      .then(() => setMessage($("#form-message"), "Офлайн-черновик сохранён в телефоне", "ok"))
+      .catch((error) => setMessage($("#form-message"), userFacingError(error), "error"));
+  }, 500);
 }
 
 function fallbackProfileFromSession(user) {
@@ -375,18 +572,18 @@ function normalizeMeasurementMode(mode) {
   return mode === "detailed" ? "detailed" : "simple";
 }
 
-function parseJsonObject(raw) {
-  if (!raw || typeof raw !== "string") return {};
+function safeJsonValue(value) {
+  if (!value) return {};
+  if (typeof value === "object") return value;
   try {
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+    return JSON.parse(value);
   } catch {
     return {};
   }
 }
 
 function modeFromDrawingProject(raw) {
-  return normalizeMeasurementMode(parseJsonObject(raw).measurementMode || MEASUREMENT_MODE_DEFAULT);
+  return normalizeMeasurementMode(safeJsonValue(raw).measurementMode || MEASUREMENT_MODE_DEFAULT);
 }
 
 const dynamicMeasurementFields = [
@@ -435,6 +632,9 @@ function activateTab(tabName) {
 }
 
 async function requestActivateTab(tabName) {
+  if (isLocalOfflineDraft() && tabName === "photos") {
+    setMessage($("#form-message"), offlineDraftMessage(), "error");
+  }
   if (activeTabName() === "photos" && tabName !== "photos") {
     const saved = await ensurePendingPhotoSaved("переходом дальше");
     if (!saved) return false;
@@ -477,7 +677,7 @@ function setMeasurementMode(mode, options = {}) {
   ensureDynamicMeasurementFields();
   const form = $("#measurement-form");
   const input = form?.drawing_project_json;
-  const project = parseJsonObject(input?.value || state.selected?.drawing_project_json || "");
+  const project = safeJsonValue(input?.value || state.selected?.drawing_project_json || "");
   project.schemaVersion = project.schemaVersion || 2;
   project.measurementMode = normalized;
   const raw = JSON.stringify(project);
@@ -572,9 +772,12 @@ function applyRoleUI() {
   jsonBtn?.classList.toggle("hidden", !canUseTechnicalExports());
   csvBtn?.classList.toggle("hidden", !canUseTechnicalExports());
   technicalActions?.classList.toggle("hidden", !canUseTechnicalActions);
-  if (productionLink) productionLink.href = productionUrl();
+  if (productionLink) productionLink.href = isLocalOfflineDraft() ? "#" : productionUrl();
   const form = $("#measurement-form");
-  if (form) form.dataset.role = role;
+  if (form) {
+    form.dataset.role = role;
+    form.dataset.offlineDraft = isLocalOfflineDraft() ? "true" : "false";
+  }
 }
 
 function showApp(isAuthed) {
@@ -611,6 +814,7 @@ async function init() {
       showApp(false);
     }
     showOfflineState();
+    await loadOfflineDrafts();
     return;
   }
 
@@ -627,6 +831,7 @@ async function init() {
   await loadProfile();
   showApp(true);
   await loadMeasurements();
+  await loadOfflineDrafts();
 }
 
 async function login() {
@@ -643,6 +848,7 @@ async function login() {
   showApp(true);
   await loadMeasurements();
   setOfflineStartupNotice(false);
+  await loadOfflineDrafts();
   setMessage($("#auth-message"), "");
 }
 
@@ -744,6 +950,7 @@ async function loadMeasurements() {
   }
   state.measurements = data || [];
   setOfflineStartupNotice(false);
+  await loadOfflineDrafts();
   setMessage($("#form-message"), "");
   renderStats();
   renderList();
@@ -917,8 +1124,8 @@ function fillForm(m) {
   form.has_pipes.checked = Boolean(m.has_pipes);
   form.has_electricity.checked = Boolean(m.has_electricity);
   form.has_ventilation.checked = Boolean(m.has_ventilation);
-  $("#form-title").textContent = m.number || "Новый замер";
-  $("#form-status").textContent = m.status || "Черновик";
+  $("#form-title").textContent = isLocalOfflineDraft(m) ? `Офлайн-черновик ${m.number || "TEMP"}` : (m.number || "Новый замер");
+  $("#form-status").textContent = isLocalOfflineDraft(m) ? "local_only" : (m.status || "Черновик");
   const formMeasurer = $("#form-measurer");
   const measurerName = measurementMeasurerName(m);
   if (formMeasurer) {
@@ -1052,7 +1259,7 @@ function getRequiredMeasurementErrors() {
   ensureDynamicMeasurementFields();
   const form = $("#measurement-form");
   const rawProject = form?.drawing_project_json?.value || state.selected?.drawing_project_json || "";
-  const project = parseJsonObject(rawProject);
+  const project = safeJsonValue(rawProject);
   const type = String(project.type || "");
   const measurementMode = projectMeasurementMode(project);
   const mode = type.startsWith("empty") || !type ? "empty" : "ready";
@@ -1082,6 +1289,9 @@ function requireWorkflowReady(actionLabel = "принятием замера") {
 }
 
 async function saveMeasurement(options = {}) {
+  if (isLocalOfflineDraft()) {
+    return saveLocalOfflineDraftNow();
+  }
   if (!supabaseClient || !navigator.onLine) {
     showOfflineState();
     return null;
@@ -1133,6 +1343,10 @@ async function saveMeasurement(options = {}) {
 }
 
 async function setStatus(status, extra = {}, options = {}) {
+  if (isLocalOfflineDraft()) {
+    setMessage($("#form-message"), offlineDraftMessage(), "error");
+    return;
+  }
   if (!supabaseClient || !navigator.onLine) {
     showOfflineState();
     return;
@@ -1362,7 +1576,7 @@ function renderPreview() {
   const m = state.selected;
   if (!box || !m) return;
   const c = m.clients || {};
-  const project = parseJsonObject(m.drawing_project_json);
+  const project = safeJsonValue(m.drawing_project_json);
   const productionHref = productionUrl(m);
   const canEdit = canEditMeasurements();
   box.innerHTML = `
@@ -1427,6 +1641,7 @@ function renderPreview() {
 }
 
 function selectedPhotos() {
+  if (isLocalOfflineDraft()) return [];
   if (!state.selected?.id || state.photoScopeId !== state.selected.id) return [];
   return filterPhotosForMeasurement(state.photos, state.selected);
 }
@@ -1457,6 +1672,12 @@ function setPhotoInputsDisabled(disabled) {
 }
 
 function handlePhotoInputChange(event) {
+  if (isLocalOfflineDraft()) {
+    clearPhotoInputs();
+    setPhotoStatus(offlineDraftMessage(), "error");
+    setMessage($("#form-message"), offlineDraftMessage(), "error");
+    return;
+  }
   const changedInput = event.currentTarget;
   state.pendingPhotoFiles = Array.from(changedInput?.files || []);
   photoFileInputs().forEach((input) => {
@@ -1476,6 +1697,7 @@ function setPhotoStatus(text, type = "") {
 
 function updatePhotoStatusFromInput() {
   if (state.photoUploadPromise) return;
+  if (isLocalOfflineDraft()) return setPhotoStatus(offlineDraftMessage(), "error");
   if (hasPendingPhotoFile()) return setPhotoStatus("Фото выбрано. Начинаю загрузку...", "pending");
   if (selectedPhotos().length) return setPhotoStatus(`Фото сохранены: ${selectedPhotos().length}.`, "ok");
   setPhotoStatus("Фото не выбрано.");
@@ -1521,6 +1743,11 @@ function renderPhotos() {
   }
   const photos = selectedPhotos();
   const title = escapeHtml(state.selected.number || "новый замер");
+  if (isLocalOfflineDraft()) {
+    box.innerHTML = `<div class="photo-scope-note"><b>Фото этого замера:</b> ${title}.</div><p class="muted-text">${escapeHtml(offlineDraftMessage())}</p>`;
+    setPhotoStatus(offlineDraftMessage(), "error");
+    return;
+  }
   const hiddenNote = state.hiddenForeignPhotos > 0 ? ` <span class="photo-warning">Скрыто чужих/старых записей: ${state.hiddenForeignPhotos}.</span>` : "";
   const note = `<div class="photo-scope-note"><b>Фото этого замера:</b> ${title}. Фото из других карточек здесь не показываются.${hiddenNote}</div>`;
   if (!state.selected.id) {
@@ -1570,6 +1797,11 @@ async function uploadSinglePhotoFile(file, photoType, selectedId, index, total) 
 }
 
 async function uploadPhoto(options = {}) {
+  if (isLocalOfflineDraft()) {
+    setPhotoStatus(offlineDraftMessage(), "error");
+    setMessage($("#form-message"), offlineDraftMessage(), "error");
+    return [];
+  }
   if (!supabaseClient || !navigator.onLine) {
     showOfflineState();
     return [];
@@ -1616,6 +1848,10 @@ async function uploadPhoto(options = {}) {
 }
 
 async function deletePhoto(photoId) {
+  if (isLocalOfflineDraft()) {
+    setMessage($("#form-message"), offlineDraftMessage(), "error");
+    return;
+  }
   if (!supabaseClient || !navigator.onLine) {
     showOfflineState();
     return;
@@ -1684,10 +1920,6 @@ function downloadText(filename, text, type) {
   URL.revokeObjectURL(url);
 }
 
-function safeJsonValue(raw) {
-  if (!raw) return null;
-  try { return JSON.parse(raw); } catch { return raw; }
-}
 
 function downloadJson() {
   if (!state.selected) return;
@@ -1723,6 +1955,13 @@ function bind() {
   $("#close-measurements-btn").addEventListener("click", closeMeasurementsScreen);
   $("#refresh-btn").addEventListener("click", () => refreshAppData().catch((e) => setMessage($("#form-message"), userFacingError(e), "error")));
   $("#offline-retry-btn")?.addEventListener("click", () => refreshAppData().catch((e) => showOfflineState(userFacingError(e))));
+  $("#create-offline-draft-btn")?.addEventListener("click", () => createLocalOfflineDraft().catch((e) => setMessage($("#form-message"), userFacingError(e), "error")));
+  $("#offline-drafts-list")?.addEventListener("click", (event) => {
+    const openId = event.target.closest("[data-open-offline-draft]")?.dataset.openOfflineDraft;
+    const deleteId = event.target.closest("[data-delete-offline-draft]")?.dataset.deleteOfflineDraft;
+    if (openId) openOfflineDraft(openId).catch((e) => setMessage($("#form-message"), userFacingError(e), "error"));
+    if (deleteId) deleteLocalOfflineDraft(deleteId).catch((e) => setMessage($("#form-message"), userFacingError(e), "error"));
+  });
   $("#status-filter").addEventListener("change", renderList);
   $("#measurement-search").addEventListener("input", renderList);
   $("#measurement-preview").addEventListener("click", (event) => {
@@ -1731,6 +1970,9 @@ function bind() {
     if (event.target.closest("[data-print-preview]")) window.print();
   });
   $("#measurement-form").addEventListener("submit", (event) => { event.preventDefault(); saveMeasurement().catch((e) => setMessage($("#form-message"), userFacingError(e), "error")); });
+  $("#measurement-form").addEventListener("input", scheduleOfflineDraftAutosave);
+  $("#measurement-form").addEventListener("change", scheduleOfflineDraftAutosave);
+  window.addEventListener("beforeunload", () => { if (isLocalOfflineDraft()) saveLocalOfflineDraftNow({ silent: true }); });
   photoFileInputs().forEach((input) => input.addEventListener("change", handlePhotoInputChange));
   $("#photos-list").addEventListener("click", (event) => {
     const id = event.target.closest("[data-delete-photo-id]")?.dataset.deletePhotoId;
@@ -1738,6 +1980,7 @@ function bind() {
   });
   $("#send-review-btn").addEventListener("click", async () => {
     try {
+      if (isLocalOfflineDraft()) { setMessage($("#form-message"), offlineDraftMessage(), "error"); return; }
       const saved = await saveMeasurement({ requireClientFields: true, actionLabel: "отправкой на проверку" });
       if (!saved) return;
       if (!requireWorkflowReady("отправкой на проверку")) return;
@@ -1749,6 +1992,7 @@ function bind() {
   });
   $("#accept-btn").addEventListener("click", async () => {
     try {
+      if (isLocalOfflineDraft()) { setMessage($("#form-message"), offlineDraftMessage(), "error"); return; }
       if (!canAcceptMeasurements()) { setMessage($("#form-message"), "У вашей роли нет права принимать замер. Отправьте его на проверку.", "error"); return; }
       const saved = await saveMeasurement({ requireClientFields: true, actionLabel: "принятием замера" });
       if (!saved) return;
@@ -1760,17 +2004,24 @@ function bind() {
     }
   });
   $("#archive-btn").addEventListener("click", () => {
+    if (isLocalOfflineDraft()) { setMessage($("#form-message"), offlineDraftMessage(), "error"); return; }
     if (!canArchiveMeasurements()) { setMessage($("#form-message"), "Архивирование доступно только администратору/руководителю.", "error"); return; }
     if (!confirm("Перенести этот замер в архив?")) return;
     setStatus("Архив", { is_archived: true, archived_at: new Date().toISOString(), archived_by: state.user.id }).catch((e) => setMessage($("#form-message"), userFacingError(e), "error"));
   });
   $("#soft-delete-btn").addEventListener("click", () => {
+    if (isLocalOfflineDraft()) { setMessage($("#form-message"), offlineDraftMessage(), "error"); return; }
     if (!canDeleteMeasurements()) { setMessage($("#form-message"), "Удаление доступно только администратору.", "error"); return; }
     if (!confirm("Пометить этот замер как удалённый?")) return;
     setStatus("Удалён", { is_deleted: true, deleted_at: new Date().toISOString(), deleted_by: state.user.id }).catch((e) => setMessage($("#form-message"), userFacingError(e), "error"));
   });
   $("#download-json-btn").addEventListener("click", downloadJson);
   $("#download-csv-btn").addEventListener("click", downloadCsv);
+  $("#production-link")?.addEventListener("click", (event) => {
+    if (!isLocalOfflineDraft()) return;
+    event.preventDefault();
+    setMessage($("#form-message"), offlineDraftMessage(), "error");
+  });
   $("#measurement-form").addEventListener("input", renderChecks);
   $$("[data-measurement-mode]").forEach((button) => {
     button.addEventListener("click", () => setMeasurementMode(button.dataset.measurementMode));

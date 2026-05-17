@@ -66,16 +66,43 @@ code { background: #eef2ff; padding: 2px 6px; border-radius: 8px; }
 }
 main { width: min(1320px, calc(100% - 24px)); margin: 24px auto 80px; }
 .offline-startup {
+  display: block;
+  margin-bottom: 18px;
+  border-color: #fde68a;
+  background: #fffbeb;
+  padding: 18px;
+}
+.offline-startup-main { display: grid; gap: 14px; width: 100%; }
+.offline-startup-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 18px;
-  border-color: #fde68a;
-  background: #fffbeb;
 }
+.offline-startup-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; }
 .offline-startup p { margin: 6px 0 0; color: #92400e; font-weight: 700; line-height: 1.5; }
 .offline-startup .btn { flex: 0 0 auto; }
+.offline-drafts-box {
+  border: 1px solid #fde68a;
+  border-radius: 18px;
+  background: rgba(255,255,255,.62);
+  padding: 12px;
+}
+.offline-drafts-title { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-weight: 900; color: #78350f; }
+.offline-drafts-list { display: grid; gap: 10px; }
+.offline-draft-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid #fde68a;
+  border-radius: 16px;
+  padding: 12px;
+  background: #fff;
+}
+.offline-draft-card div:first-child { display: grid; gap: 3px; }
+.offline-draft-card span, .offline-draft-card small { color: var(--muted); font-weight: 700; }
+.offline-draft-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
 
 a { color: inherit; }
 .hidden { display: none !important; }
@@ -604,4 +631,9 @@ body[data-measurement-mode="simple"] [data-simple-hidden],
   main { width: 100%; margin: 0; }
   .detail-panel.card,
   .preview-section { box-shadow: none; border-color: #d1d5db; }
+}
+
+@media (max-width: 720px) {
+  .offline-startup-head, .offline-draft-card { align-items: stretch; flex-direction: column; }
+  .offline-startup-actions, .offline-draft-actions { display: grid; grid-template-columns: 1fr; justify-content: stretch; }
 }

@@ -147,8 +147,8 @@ function offlineDraftToMeasurement(draft) {
     created_at: draft.created_at,
     updated_at: draft.updated_at,
     clients: formData.client || {},
-    drawing_project_json: JSON.stringify(draft.drawing_project_json || parseJsonObject(measurement.drawing_project_json) || {}),
-    finish_dimensions_json: JSON.stringify(draft.finish_dimensions_json || parseJsonObject(measurement.finish_dimensions_json) || {}),
+    drawing_project_json: JSON.stringify(draft.drawing_project_json || safeJsonValue(measurement.drawing_project_json) || {}),
+    finish_dimensions_json: JSON.stringify(draft.finish_dimensions_json || safeJsonValue(measurement.finish_dimensions_json) || {}),
     drawing_svg: draft.drawing_svg || measurement.drawing_svg || "",
     measurer_name: draft.measurer_name || measurement.measurer_name || "",
     measurer_login: draft.measurer_login || measurement.measurer_login || "",
@@ -572,18 +572,18 @@ function normalizeMeasurementMode(mode) {
   return mode === "detailed" ? "detailed" : "simple";
 }
 
-function parseJsonObject(raw) {
-  if (!raw || typeof raw !== "string") return {};
+function safeJsonValue(value) {
+  if (!value) return {};
+  if (typeof value === "object") return value;
   try {
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+    return JSON.parse(value);
   } catch {
     return {};
   }
 }
 
 function modeFromDrawingProject(raw) {
-  return normalizeMeasurementMode(parseJsonObject(raw).measurementMode || MEASUREMENT_MODE_DEFAULT);
+  return normalizeMeasurementMode(safeJsonValue(raw).measurementMode || MEASUREMENT_MODE_DEFAULT);
 }
 
 const dynamicMeasurementFields = [
@@ -677,7 +677,7 @@ function setMeasurementMode(mode, options = {}) {
   ensureDynamicMeasurementFields();
   const form = $("#measurement-form");
   const input = form?.drawing_project_json;
-  const project = parseJsonObject(input?.value || state.selected?.drawing_project_json || "");
+  const project = safeJsonValue(input?.value || state.selected?.drawing_project_json || "");
   project.schemaVersion = project.schemaVersion || 2;
   project.measurementMode = normalized;
   const raw = JSON.stringify(project);
@@ -1259,7 +1259,7 @@ function getRequiredMeasurementErrors() {
   ensureDynamicMeasurementFields();
   const form = $("#measurement-form");
   const rawProject = form?.drawing_project_json?.value || state.selected?.drawing_project_json || "";
-  const project = parseJsonObject(rawProject);
+  const project = safeJsonValue(rawProject);
   const type = String(project.type || "");
   const measurementMode = projectMeasurementMode(project);
   const mode = type.startsWith("empty") || !type ? "empty" : "ready";
@@ -1576,7 +1576,7 @@ function renderPreview() {
   const m = state.selected;
   if (!box || !m) return;
   const c = m.clients || {};
-  const project = parseJsonObject(m.drawing_project_json);
+  const project = safeJsonValue(m.drawing_project_json);
   const productionHref = productionUrl(m);
   const canEdit = canEditMeasurements();
   box.innerHTML = `
@@ -1920,17 +1920,6 @@ function downloadText(filename, text, type) {
   URL.revokeObjectURL(url);
 }
 
-function safeJsonValue(value) {
-  if (!value) return {};
-  if (typeof value === "object") return value;
-  if (typeof value !== "string") return {};
-  try {
-    const parsed = JSON.parse(value);
-    return parsed && typeof parsed === "object" ? parsed : {};
-  } catch {
-    return {};
-  }
-}
 
 function downloadJson() {
   if (!state.selected) return;

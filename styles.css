@@ -207,7 +207,7 @@ input:focus, textarea:focus, select:focus { border-color: #111827; box-shadow: 0
 .form-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 18px; border-top: 1px solid var(--line); padding-top: 16px; }
 .tab-step-actions { display: flex; justify-content: flex-end; margin-top: 16px; }
 
-.photo-upload { display: grid; grid-template-columns: 220px 1fr auto; gap: 12px; align-items: end; }
+.photo-upload { display: grid; grid-template-columns: 220px 1fr; gap: 12px; align-items: end; }
 .photo-file-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .photo-file-btn { cursor: pointer; text-align: center; }
 .photo-help { margin: 10px 0 0; color: var(--muted); font-size: 13px; font-weight: 700; }

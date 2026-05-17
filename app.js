@@ -249,7 +249,7 @@ async function createLocalOfflineDraft() {
   };
   await window.TeksturaOfflineDB.createOfflineDraft(draft);
   await loadOfflineDrafts();
-  openOfflineDraft(draft.local_id);
+  await openOfflineDraft(draft.local_id);
 }
 
 async function openOfflineDraft(localId) {
@@ -1920,9 +1920,16 @@ function downloadText(filename, text, type) {
   URL.revokeObjectURL(url);
 }
 
-function safeJsonValue(raw) {
-  if (!raw) return null;
-  try { return JSON.parse(raw); } catch { return raw; }
+function safeJsonValue(value) {
+  if (!value) return {};
+  if (typeof value === "object") return value;
+  if (typeof value !== "string") return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
 }
 
 function downloadJson() {

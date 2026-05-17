@@ -31,6 +31,14 @@
       </header>
 
       <main>
+        <section id="offline-startup" class="card offline-startup hidden" aria-live="polite">
+          <div>
+            <div class="eyebrow">Офлайн</div>
+            <p id="offline-startup-message">Офлайн. Интернет недоступен. В этом режиме пока можно только открыть приложение. Локальные замеры будут добавлены следующим этапом.</p>
+          </div>
+          <button id="offline-retry-btn" class="btn secondary" type="button">Обновить</button>
+        </section>
+
         <section id="setup-warning" class="card warning hidden">
           <h2>Нужно настроить Supabase</h2>
           <p>Откройте <code>zamer/app.js</code> и вставьте <code>SUPABASE_URL</code> и <code>SUPABASE_ANON_KEY</code> из Supabase → Project Settings → API.</p>

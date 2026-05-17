@@ -1,11 +1,13 @@
 const SUPABASE_URL = "https://rhnlykqqhwweaywjopvm.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJobmx5a3FxaHd3ZWF5d2pvcHZtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYxODE0NjksImV4cCI6MjA5MTc1NzQ2OX0.a0K1q7VKDBRW_7A6fbf5jyMOqO0KpRXQdn8XMBeXfwg";
 
-const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const SUPABASE_PROJECT_REF = new URL(SUPABASE_URL).hostname.split(".")[0];
+const SUPABASE_AUTH_STORAGE_KEY = `sb-${SUPABASE_PROJECT_REF}-auth-token`;
+const OFFLINE_STARTUP_MESSAGE = "Офлайн. Интернет недоступен. В этом режиме пока можно только открыть приложение. Локальные замеры будут добавлены следующим этапом.";
+const supabaseClient = window.supabase?.createClient ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
 
-const OFFLINE_SHELL_NOTE = "Офлайн-оболочка доступна. Полноценный запуск без интернета возможен только если Supabase CDN уже был загружен этим браузером раньше.";
 
 function updateNetworkIndicator() {
   const indicator = $("#offline-status");
@@ -13,8 +15,8 @@ function updateNetworkIndicator() {
   const isOnline = navigator.onLine;
   indicator.textContent = isOnline ? "Онлайн" : "Офлайн";
   indicator.classList.toggle("offline", !isOnline);
-  indicator.title = isOnline ? "Соединение с сетью есть" : OFFLINE_SHELL_NOTE;
-  indicator.setAttribute("aria-label", isOnline ? "Приложение онлайн" : OFFLINE_SHELL_NOTE);
+  indicator.title = isOnline ? "Соединение с сетью есть" : OFFLINE_STARTUP_MESSAGE;
+  indicator.setAttribute("aria-label", isOnline ? "Приложение онлайн" : OFFLINE_STARTUP_MESSAGE);
 }
 
 function rememberNetworkState() {
@@ -25,8 +27,16 @@ function rememberNetworkState() {
 function bindNetworkIndicator() {
   updateNetworkIndicator();
   rememberNetworkState();
-  window.addEventListener("online", () => { updateNetworkIndicator(); rememberNetworkState(); });
-  window.addEventListener("offline", () => { updateNetworkIndicator(); rememberNetworkState(); });
+  window.addEventListener("online", () => {
+    updateNetworkIndicator();
+    rememberNetworkState();
+    if (state.offlineStartup) setOfflineStartupNotice(true, "Интернет появился. Нажмите «Обновить», чтобы загрузить данные.", true);
+  });
+  window.addEventListener("offline", () => {
+    updateNetworkIndicator();
+    rememberNetworkState();
+    setOfflineStartupNotice(true);
+  });
 }
 
 function registerServiceWorker() {
@@ -47,7 +57,76 @@ const state = {
   hiddenForeignPhotos: 0,
   photoUploadPromise: null,
   pendingPhotoFiles: [],
+  offlineStartup: false,
 };
+
+
+function parseStoredSupabaseSession(raw) {
+  if (!raw) return null;
+  try {
+    const value = JSON.parse(raw);
+    const session = value?.currentSession || value?.session || value;
+    if (session?.user) return session;
+  } catch (error) {
+    console.warn("Stored Supabase session was not parsed", error);
+  }
+  return null;
+}
+
+function readStoredSupabaseSession() {
+  const directSession = parseStoredSupabaseSession(localStorage.getItem(SUPABASE_AUTH_STORAGE_KEY));
+  if (directSession) return directSession;
+
+  for (let index = 0; index < localStorage.length; index += 1) {
+    const key = localStorage.key(index);
+    if (!key?.startsWith("sb-") || !key.endsWith("-auth-token")) continue;
+    const session = parseStoredSupabaseSession(localStorage.getItem(key));
+    if (session?.user) return session;
+  }
+  return null;
+}
+
+function isOfflineNetworkError(error) {
+  if (!navigator.onLine || !supabaseClient) return true;
+  const message = String(error?.message || error?.name || error || "").toLowerCase();
+  return ["failed to fetch", "networkerror", "network error", "load failed", "fetcherror", "fetch failed"].some((part) => message.includes(part));
+}
+
+function offlineActionMessage() {
+  return navigator.onLine
+    ? "Не удалось загрузить данные из Supabase. Нажмите «Обновить» после восстановления соединения."
+    : OFFLINE_STARTUP_MESSAGE;
+}
+
+function userFacingError(error) {
+  return isOfflineNetworkError(error) ? offlineActionMessage() : (error?.message || String(error));
+}
+
+function setOfflineStartupNotice(visible, message = OFFLINE_STARTUP_MESSAGE, canRefresh = navigator.onLine) {
+  const notice = $("#offline-startup");
+  if (!notice) return;
+  state.offlineStartup = Boolean(visible);
+  notice.classList.toggle("hidden", !visible);
+  const messageElement = $("#offline-startup-message");
+  if (messageElement) messageElement.textContent = message;
+  const refreshButton = $("#offline-retry-btn");
+  if (refreshButton) refreshButton.disabled = !canRefresh;
+}
+
+function showOfflineState(message = OFFLINE_STARTUP_MESSAGE) {
+  setOfflineStartupNotice(true, message, navigator.onLine);
+  setMessage($("#auth-message"), message, "error");
+  setMessage($("#form-message"), message, "error");
+}
+
+function fallbackProfileFromSession(user) {
+  const identity = currentUserIdentity(user);
+  return {
+    id: user.id,
+    full_name: identity.name || user.email?.split("@")[0] || "Пользователь",
+    role: identity.role || "zamer",
+  };
+}
 
 const LOGIN_USERS = {
   ruslan: {
@@ -507,22 +586,43 @@ function showApp(isAuthed) {
 }
 
 async function loadProfile() {
-  const { data } = await supabaseClient.from("profiles").select("*").eq("id", state.user.id).maybeSingle();
+  if (!supabaseClient) {
+    state.profile = fallbackProfileFromSession(state.user);
+    return;
+  }
+
+  const { data, error } = await supabaseClient.from("profiles").select("*").eq("id", state.user.id).maybeSingle();
   if (data) {
     state.profile = data;
     return;
   }
-  const identity = currentUserIdentity(state.user);
-  state.profile = {
-    id: state.user.id,
-    full_name: identity.name || state.user.email?.split("@")[0] || "Пользователь",
-    role: identity.role || "zamer",
-  };
+  if (error && isOfflineNetworkError(error)) showOfflineState();
+  state.profile = fallbackProfileFromSession(state.user);
 }
 
 async function init() {
-  const { data } = await supabaseClient.auth.getSession();
-  state.user = data.session?.user || null;
+  if (!supabaseClient || !navigator.onLine) {
+    const session = readStoredSupabaseSession();
+    state.user = session?.user || null;
+    if (state.user) {
+      state.profile = fallbackProfileFromSession(state.user);
+      showApp(true);
+    } else {
+      showApp(false);
+    }
+    showOfflineState();
+    return;
+  }
+
+  try {
+    const { data } = await supabaseClient.auth.getSession();
+    state.user = data.session?.user || readStoredSupabaseSession()?.user || null;
+  } catch (error) {
+    if (!isOfflineNetworkError(error)) throw error;
+    state.user = readStoredSupabaseSession()?.user || null;
+    showOfflineState();
+  }
+
   if (!state.user) return showApp(false);
   await loadProfile();
   showApp(true);
@@ -530,27 +630,36 @@ async function init() {
 }
 
 async function login() {
+  if (!supabaseClient || !navigator.onLine) {
+    showOfflineState();
+    return;
+  }
   setMessage($("#auth-message"), "Вход...");
   const email = normalizeLogin($("#email").value);
   const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password: $("#password").value });
-  if (error) return setMessage($("#auth-message"), "Неверный логин или код", "error");
+  if (error) return setMessage($("#auth-message"), isOfflineNetworkError(error) ? offlineActionMessage() : "Неверный логин или код", "error");
   state.user = data.user;
   await loadProfile();
   showApp(true);
   await loadMeasurements();
+  setOfflineStartupNotice(false);
   setMessage($("#auth-message"), "");
 }
 
 async function signup() {
+  if (!supabaseClient || !navigator.onLine) {
+    showOfflineState();
+    return;
+  }
   setMessage($("#auth-message"), "Создаю пользователя...");
   const { data, error } = await supabaseClient.auth.signUp({ email: normalizeLogin($("#email").value), password: $("#password").value });
-  if (error) return setMessage($("#auth-message"), error.message, "error");
+  if (error) return setMessage($("#auth-message"), userFacingError(error), "error");
   setMessage($("#auth-message"), "Пользователь создан. Теперь нажмите Войти.", "ok");
   if (data.user) state.user = data.user;
 }
 
 async function logout() {
-  await supabaseClient.auth.signOut();
+  if (supabaseClient) await supabaseClient.auth.signOut();
   state.user = null;
   state.profile = null;
   state.measurements = [];
@@ -616,11 +725,42 @@ function getFormData() {
 }
 
 async function loadMeasurements() {
+  if (!supabaseClient || !navigator.onLine) {
+    showOfflineState();
+    renderStats();
+    renderList();
+    return;
+  }
+
   const { data, error } = await supabaseClient.from("measurements").select("*, clients(*)").order("created_at", { ascending: false });
-  if (error) throw error;
+  if (error) {
+    if (isOfflineNetworkError(error)) {
+      showOfflineState(offlineActionMessage());
+      renderStats();
+      renderList();
+      return;
+    }
+    throw error;
+  }
   state.measurements = data || [];
+  setOfflineStartupNotice(false);
+  setMessage($("#form-message"), "");
   renderStats();
   renderList();
+}
+
+async function refreshAppData() {
+  if (!state.user) {
+    await init();
+    return;
+  }
+  if (!supabaseClient || !navigator.onLine) {
+    showOfflineState();
+    return;
+  }
+  await loadProfile();
+  showApp(true);
+  await loadMeasurements();
 }
 
 function filteredMeasurements() {
@@ -942,6 +1082,10 @@ function requireWorkflowReady(actionLabel = "принятием замера") {
 }
 
 async function saveMeasurement(options = {}) {
+  if (!supabaseClient || !navigator.onLine) {
+    showOfflineState();
+    return null;
+  }
   setMessage($("#form-message"), "Сохраняю...");
   if (options.requireClientFields && !requireClientBeforeWorkflow(options.actionLabel || "отправкой на проверку")) return null;
   const { client, measurement } = getFormData();
@@ -989,6 +1133,10 @@ async function saveMeasurement(options = {}) {
 }
 
 async function setStatus(status, extra = {}, options = {}) {
+  if (!supabaseClient || !navigator.onLine) {
+    showOfflineState();
+    return;
+  }
   if (options.requireClientFields && !requireClientBeforeWorkflow(options.actionLabel || "изменением статуса")) return;
   if (!state.selected?.id) await saveMeasurement({ requireClientFields: Boolean(options.requireClientFields), actionLabel: options.actionLabel });
   if (!state.selected?.id) return;
@@ -1000,6 +1148,10 @@ async function setStatus(status, extra = {}, options = {}) {
 }
 
 async function loadPhotos(measurementId) {
+  if (!supabaseClient || !navigator.onLine) {
+    showOfflineState();
+    return;
+  }
   if (!measurementId) {
     state.photos = [];
     state.photoScopeId = null;
@@ -1011,7 +1163,13 @@ async function loadPhotos(measurementId) {
     .select("*")
     .eq("measurement_id", measurementId)
     .order("created_at", { ascending: false });
-  if (error) throw error;
+  if (error) {
+    if (isOfflineNetworkError(error)) {
+      showOfflineState(offlineActionMessage());
+      return;
+    }
+    throw error;
+  }
   if (state.selected?.id !== measurementId) return;
   state.photoScopeId = measurementId;
   state.photos = filterPhotosForMeasurement(data || [], state.selected);
@@ -1306,7 +1464,7 @@ function handlePhotoInputChange(event) {
   });
   if (!hasPendingPhotoFile()) return updatePhotoStatusFromInput();
   setPhotoStatus("Фото выбрано. Начинаю загрузку...", "pending");
-  ensurePendingPhotoSaved("выбором фото").catch((e) => setMessage($("#form-message"), e.message, "error"));
+  ensurePendingPhotoSaved("выбором фото").catch((e) => setMessage($("#form-message"), userFacingError(e), "error"));
 }
 
 function setPhotoStatus(text, type = "") {
@@ -1329,7 +1487,7 @@ async function ensurePendingPhotoSaved(actionLabel = "переходом дал�
       await state.photoUploadPromise;
       return true;
     } catch (error) {
-      setMessage($("#form-message"), `Фото не сохранено: ${error.message}`, "error");
+      setMessage($("#form-message"), `Фото не сохранено: ${userFacingError(error)}`, "error");
       setPhotoStatus("Фото не сохранено. Попробуйте ещё раз.", "error");
       return false;
     }
@@ -1344,7 +1502,7 @@ async function ensurePendingPhotoSaved(actionLabel = "переходом дал�
     setMessage($("#form-message"), `Фото сохранены: ${savedCount}.`, "ok");
     return true;
   } catch (error) {
-    setMessage($("#form-message"), `Фото не сохранено: ${error.message}`, "error");
+    setMessage($("#form-message"), `Фото не сохранено: ${userFacingError(error)}`, "error");
     if (!photoStatusElement()?.classList.contains("error")) {
       setPhotoStatus("Фото не сохранено. Проверьте интернет и повторите загрузку.", "error");
     }
@@ -1412,6 +1570,10 @@ async function uploadSinglePhotoFile(file, photoType, selectedId, index, total) 
 }
 
 async function uploadPhoto(options = {}) {
+  if (!supabaseClient || !navigator.onLine) {
+    showOfflineState();
+    return [];
+  }
   const files = pendingPhotoFiles();
   if (!files.length) {
     updatePhotoStatusFromInput();
@@ -1444,7 +1606,7 @@ async function uploadPhoto(options = {}) {
     return savedPhotos;
   } catch (error) {
     state.pendingPhotoFiles = files.slice(savedPhotos.length);
-    const status = `Фото не сохранены: ${savedPhotos.length} из ${files.length}. Ошибка: ${error.message}`;
+    const status = `Фото не сохранены: ${savedPhotos.length} из ${files.length}. Ошибка: ${userFacingError(error)}`;
     setPhotoStatus(status, "error");
     setMessage($("#form-message"), status, "error");
     throw error;
@@ -1454,6 +1616,10 @@ async function uploadPhoto(options = {}) {
 }
 
 async function deletePhoto(photoId) {
+  if (!supabaseClient || !navigator.onLine) {
+    showOfflineState();
+    return;
+  }
   if (!state.selected?.id || !photoId) return;
   const photo = selectedPhotos().find((item) => item.id === photoId);
   if (!photo) return setMessage($("#form-message"), "Это фото не относится к открытому замеру.", "error");
@@ -1544,8 +1710,8 @@ function downloadCsv() { if (state.selected) { const m = state.selected; const c
 
 function bind() {
   enhanceCommonInputs();
-  $("#login-btn").addEventListener("click", () => login().catch((e) => setMessage($("#auth-message"), e.message, "error")));
-  $("#signup-btn").addEventListener("click", () => signup().catch((e) => setMessage($("#auth-message"), e.message, "error")));
+  $("#login-btn").addEventListener("click", () => login().catch((e) => setMessage($("#auth-message"), userFacingError(e), "error")));
+  $("#signup-btn").addEventListener("click", () => signup().catch((e) => setMessage($("#auth-message"), userFacingError(e), "error")));
   $("#copy-share-btn")?.addEventListener("click", () => copyShareInvite().catch(() => {
     const text = shareInviteText($("#share-login")?.value);
     showShareFallback(text);
@@ -1555,7 +1721,8 @@ function bind() {
   $("#new-measurement-btn").addEventListener("click", showNewMeasurementModePicker);
   $("#open-measurements-btn").addEventListener("click", openMeasurementsScreen);
   $("#close-measurements-btn").addEventListener("click", closeMeasurementsScreen);
-  $("#refresh-btn").addEventListener("click", () => loadMeasurements().catch((e) => alert(e.message)));
+  $("#refresh-btn").addEventListener("click", () => refreshAppData().catch((e) => setMessage($("#form-message"), userFacingError(e), "error")));
+  $("#offline-retry-btn")?.addEventListener("click", () => refreshAppData().catch((e) => showOfflineState(userFacingError(e))));
   $("#status-filter").addEventListener("change", renderList);
   $("#measurement-search").addEventListener("input", renderList);
   $("#measurement-preview").addEventListener("click", (event) => {
@@ -1563,11 +1730,11 @@ function bind() {
     if (event.target.closest("[data-edit-measurement]")) editSelectedMeasurement();
     if (event.target.closest("[data-print-preview]")) window.print();
   });
-  $("#measurement-form").addEventListener("submit", (event) => { event.preventDefault(); saveMeasurement().catch((e) => setMessage($("#form-message"), e.message, "error")); });
+  $("#measurement-form").addEventListener("submit", (event) => { event.preventDefault(); saveMeasurement().catch((e) => setMessage($("#form-message"), userFacingError(e), "error")); });
   photoFileInputs().forEach((input) => input.addEventListener("change", handlePhotoInputChange));
   $("#photos-list").addEventListener("click", (event) => {
     const id = event.target.closest("[data-delete-photo-id]")?.dataset.deletePhotoId;
-    if (id) deletePhoto(id).catch((e) => setMessage($("#form-message"), e.message, "error"));
+    if (id) deletePhoto(id).catch((e) => setMessage($("#form-message"), userFacingError(e), "error"));
   });
   $("#send-review-btn").addEventListener("click", async () => {
     try {
@@ -1577,7 +1744,7 @@ function bind() {
       await setStatus("На проверке", {}, { requireClientFields: true, actionLabel: "отправкой на проверку" });
       setMessage($("#form-message"), "Замер отправлен на проверку.", "ok");
     } catch (e) {
-      setMessage($("#form-message"), e.message, "error");
+      setMessage($("#form-message"), userFacingError(e), "error");
     }
   });
   $("#accept-btn").addEventListener("click", async () => {
@@ -1589,18 +1756,18 @@ function bind() {
       await setStatus("Готовый замер", { checked_by: state.user.id, checked_at: new Date().toISOString() });
       setMessage($("#form-message"), "Замер принят и сохранён.", "ok");
     } catch (e) {
-      setMessage($("#form-message"), e.message, "error");
+      setMessage($("#form-message"), userFacingError(e), "error");
     }
   });
   $("#archive-btn").addEventListener("click", () => {
     if (!canArchiveMeasurements()) { setMessage($("#form-message"), "Архивирование доступно только администратору/руководителю.", "error"); return; }
     if (!confirm("Перенести этот замер в архив?")) return;
-    setStatus("Архив", { is_archived: true, archived_at: new Date().toISOString(), archived_by: state.user.id }).catch((e) => alert(e.message));
+    setStatus("Архив", { is_archived: true, archived_at: new Date().toISOString(), archived_by: state.user.id }).catch((e) => setMessage($("#form-message"), userFacingError(e), "error"));
   });
   $("#soft-delete-btn").addEventListener("click", () => {
     if (!canDeleteMeasurements()) { setMessage($("#form-message"), "Удаление доступно только администратору.", "error"); return; }
     if (!confirm("Пометить этот замер как удалённый?")) return;
-    setStatus("Удалён", { is_deleted: true, deleted_at: new Date().toISOString(), deleted_by: state.user.id }).catch((e) => alert(e.message));
+    setStatus("Удалён", { is_deleted: true, deleted_at: new Date().toISOString(), deleted_by: state.user.id }).catch((e) => setMessage($("#form-message"), userFacingError(e), "error"));
   });
   $("#download-json-btn").addEventListener("click", downloadJson);
   $("#download-csv-btn").addEventListener("click", downloadCsv);
@@ -1608,10 +1775,10 @@ function bind() {
   $$("[data-measurement-mode]").forEach((button) => {
     button.addEventListener("click", () => setMeasurementMode(button.dataset.measurementMode));
   });
-  $$(".tab").forEach((tab) => tab.addEventListener("click", () => requestActivateTab(tab.dataset.tab).catch((e) => setMessage($("#form-message"), e.message, "error"))));
+  $$(".tab").forEach((tab) => tab.addEventListener("click", () => requestActivateTab(tab.dataset.tab).catch((e) => setMessage($("#form-message"), userFacingError(e), "error"))));
 }
 
 bindNetworkIndicator();
 registerServiceWorker();
 bind();
-init().catch((e) => { console.error(e); setMessage($("#auth-message"), e.message, "error"); });
+init().catch((e) => { console.error(e); setMessage($("#auth-message"), userFacingError(e), "error"); });

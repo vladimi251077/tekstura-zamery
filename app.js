@@ -442,10 +442,11 @@ async function markOfflineDraftSyncError(localId, error) {
 function buildMeasurementPayloadFromOfflineDraft(draft, clientId) {
   const formData = draft?.form_data || {};
   const measurement = { ...(formData.measurement || {}) };
-  delete measurement.number;
   const identity = currentUserIdentity();
+  const number = createMeasurementNumber();
   return {
     ...measurement,
+    number,
     status: measurement.status === "Офлайн-черновик" ? "Черновик" : (measurement.status || "Черновик"),
     client_id: clientId,
     created_by: measurement.created_by || state.user?.id,
@@ -792,8 +793,8 @@ function toNumber(value) {
   return Number.isFinite(n) ? n : null;
 }
 
-function createMeasurementNumber() {
-  return `KZN-ZM-${new Date().getFullYear()}-${Math.floor(Math.random() * 900000 + 100000)}`;
+function createMeasurementNumber(date = new Date()) {
+  return `KZN-ZM-${date.getFullYear()}-${Math.floor(Math.random() * 900000 + 100000)}`;
 }
 
 const MEASUREMENT_MODE_DEFAULT = "simple";

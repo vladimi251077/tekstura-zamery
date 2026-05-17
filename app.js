@@ -5,7 +5,16 @@ const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
 
-const state = { user: null, profile: null, measurements: [], selected: null, photos: [], photoScopeId: null, hiddenForeignPhotos: 0 };
+const state = {
+  user: null,
+  profile: null,
+  measurements: [],
+  selected: null,
+  photos: [],
+  photoScopeId: null,
+  hiddenForeignPhotos: 0,
+  photoUploadPromise: null,
+};
 
 const LOGIN_USERS = {
   ruslan: {
@@ -299,13 +308,26 @@ function getCurrentMeasurementMode() {
   return modeFromDrawingProject(raw);
 }
 
+function activeTabName() {
+  return $(".tab.active")?.dataset.tab || "";
+}
+
 function activateTab(tabName) {
   const tab = $(`.tab[data-tab="${tabName}"]`);
-  if (!tab || tab.classList.contains("hidden")) return;
+  if (!tab || tab.classList.contains("hidden")) return false;
   $$(".tab").forEach((item) => item.classList.remove("active"));
   tab.classList.add("active");
   $$(".tab-panel").forEach((panel) => panel.classList.toggle("hidden", panel.dataset.panel !== tabName));
   if (tabName === "check") renderChecks();
+  return true;
+}
+
+async function requestActivateTab(tabName) {
+  if (activeTabName() === "photos" && tabName !== "photos") {
+    const saved = await ensurePendingPhotoSaved("переходом дальше");
+    if (!saved) return false;
+  }
+  return activateTab(tabName);
 }
 
 function applyMeasurementModeUI(mode = getCurrentMeasurementMode()) {
@@ -827,9 +849,20 @@ function matrixShape(isStraight, isWinder) {
   return isWinder ? "winder" : "landing";
 }
 
+function isReadyULandingType(type) {
+  const text = String(type || "");
+  return text === "ready_u_landing_left" || text === "ready_u_landing_right";
+}
+
+function withReadyULandingFields(fields, type, mode) {
+  if (!isReadyULandingType(type) || mode !== "ready") return fields;
+  return [...fields, "ZL", "ZW"];
+}
+
 function requiredMatrixFields(project, mode, measurementMode, shape) {
   const sameTread = project?.treadMode?.sameTread !== false;
-  const fields = REQUIRED_FIELD_MATRIX[mode]?.[measurementMode]?.[shape] || REQUIRED_FIELD_MATRIX[mode]?.[measurementMode]?.turn || [];
+  const baseFields = REQUIRED_FIELD_MATRIX[mode]?.[measurementMode]?.[shape] || REQUIRED_FIELD_MATRIX[mode]?.[measurementMode]?.turn || [];
+  const fields = withReadyULandingFields(baseFields, project?.type, mode);
   return fields.flatMap((code) => {
     if (code === "tread") return sameTread ? ["b"] : ["b1", "b2"];
     if (code === "tread1") return sameTread ? ["b"] : ["b1"];
@@ -912,7 +945,13 @@ async function saveMeasurement(options = {}) {
   }
   await loadMeasurements();
   await selectMeasurement(state.selected.id, { mode: "edit" });
-  setMessage($("#form-message"), "Сохранено.", "ok");
+  if (!options.skipPendingPhotoUpload && hasPendingPhotoFile()) {
+    const savedPhoto = await ensurePendingPhotoSaved("сохранением замера");
+    if (!savedPhoto) return null;
+    setMessage($("#form-message"), "Сохранено. Фото сохранено.", "ok");
+  } else {
+    setMessage($("#form-message"), "Сохранено.", "ok");
+  }
   return state.selected;
 }
 
@@ -1023,7 +1062,8 @@ const PREVIEW_FIELD_LABELS = {
 function previewMatrixFields(project, variant) {
   const measurementMode = previewMeasurementMode(project);
   const shape = variant.opening === "straight" ? "straight" : variant.turn === "winder" ? "winder" : "landing";
-  const fields = PREVIEW_FIELD_MATRIX[variant.mode]?.[measurementMode]?.[shape] || [];
+  const baseFields = PREVIEW_FIELD_MATRIX[variant.mode]?.[measurementMode]?.[shape] || [];
+  const fields = withReadyULandingFields(baseFields, variant.type, variant.mode);
   const sameTread = project?.treadMode?.sameTread !== false;
   return fields.flatMap((code) => {
     if (code === "tread") return sameTread ? ["b"] : ["b1", "b2"];
@@ -1067,6 +1107,14 @@ function previewFieldValues(measurement, project) {
   return values;
 }
 
+function previewFieldLabel(code, variant) {
+  if (isReadyULandingType(variant?.type)) {
+    if (code === "ZL") return "Площадка длина";
+    if (code === "ZW") return "Площадка ширина";
+  }
+  return PREVIEW_FIELD_LABELS[code] || code;
+}
+
 function previewDimensionMarkup(measurement, project) {
   const variant = previewVariant(project);
   const values = previewFieldValues(measurement, project);
@@ -1074,7 +1122,7 @@ function previewDimensionMarkup(measurement, project) {
     const value = values[code];
     if (!value) return "";
     const suffix = ["N1", "N2", "ZN"].includes(code) ? " шт" : " мм";
-    return previewRow(PREVIEW_FIELD_LABELS[code] || code, `${Math.round(value)}${suffix}`);
+    return previewRow(previewFieldLabel(code, variant), `${Math.round(value)}${suffix}`);
   }).filter(Boolean);
   return rows.length ? rows.join("") : `<p class="muted-text">Рабочие размеры не заполнены.</p>`;
 }
@@ -1192,6 +1240,61 @@ function selectedPhotos() {
   return filterPhotosForMeasurement(state.photos, state.selected);
 }
 
+function photoStatusElement() {
+  return $("#photo-status");
+}
+
+function photoFileInput() {
+  return $("#photo-file");
+}
+
+function hasPendingPhotoFile() {
+  return Boolean(photoFileInput()?.files?.[0]);
+}
+
+function setPhotoStatus(text, type = "") {
+  const box = photoStatusElement();
+  if (!box) return;
+  box.textContent = text || "";
+  box.className = `photo-status ${type}`.trim();
+}
+
+function updatePhotoStatusFromInput() {
+  if (state.photoUploadPromise) return setPhotoStatus("Идёт загрузка фото...", "loading");
+  if (hasPendingPhotoFile()) return setPhotoStatus("Фото выбрано. Нажмите «Загрузить фото» или «Следующий» — перед переходом фото будет сохранено.", "pending");
+  if (selectedPhotos().length) return setPhotoStatus("Фото сохранено.", "ok");
+  setPhotoStatus("Фото не выбрано.");
+}
+
+async function ensurePendingPhotoSaved(actionLabel = "переходом дальше") {
+  if (state.photoUploadPromise) {
+    try {
+      await state.photoUploadPromise;
+      return true;
+    } catch (error) {
+      setMessage($("#form-message"), `Фото не сохранено: ${error.message}`, "error");
+      setPhotoStatus("Фото не сохранено. Попробуйте ещё раз.", "error");
+      return false;
+    }
+  }
+  if (!hasPendingPhotoFile()) return true;
+  try {
+    setPhotoStatus("Идёт загрузка фото...", "loading");
+    setMessage($("#form-message"), `Перед ${actionLabel} сохраняю выбранное фото...`);
+    state.photoUploadPromise = uploadPhoto({ auto: true });
+    await state.photoUploadPromise;
+    setMessage($("#form-message"), "Фото сохранено.", "ok");
+    return true;
+  } catch (error) {
+    setMessage($("#form-message"), `Фото не сохранено: ${error.message}`, "error");
+    setPhotoStatus("Фото не сохранено. Проверьте интернет и повторите загрузку.", "error");
+    return false;
+  } finally {
+    state.photoUploadPromise = null;
+    updatePhotoStatusFromInput();
+  }
+}
+
 function renderPhotos() {
   const box = $("#photos-list");
   if (!box) return;
@@ -1205,10 +1308,12 @@ function renderPhotos() {
   const note = `<div class="photo-scope-note"><b>Фото этого замера:</b> ${title}. Фото из других карточек здесь не показываются.${hiddenNote}</div>`;
   if (!state.selected.id) {
     box.innerHTML = `${note}<p class="muted-text">Сначала сохраните черновик, потом можно прикреплять фото.</p>`;
+    updatePhotoStatusFromInput();
     return;
   }
   if (!photos.length) {
     box.innerHTML = `${note}<p class="muted-text">Фото ещё не загружены для этого замера.</p>`;
+    updatePhotoStatusFromInput();
     return;
   }
   box.innerHTML = `${note}${photos.map((p) => `
@@ -1220,29 +1325,55 @@ function renderPhotos() {
         <button type="button" class="btn danger photo-delete-btn" data-delete-photo-id="${escapeHtml(p.id)}">Убрать фото из этого замера</button>
       </div>
     </div>`).join("")}`;
+  updatePhotoStatusFromInput();
 }
 
-async function uploadPhoto() {
+async function uploadPhoto(options = {}) {
+  const fileInput = photoFileInput();
+  const file = fileInput?.files?.[0];
+  if (!file) {
+    updatePhotoStatusFromInput();
+    return setMessage($("#form-message"), "Выберите фото.", "error");
+  }
+  const photoType = $("#photo-type")?.value || "Другое";
   if (!state.selected?.id) {
-    const saved = await saveMeasurement();
-    if (!saved) return;
+    const saved = await saveMeasurement({ skipPendingPhotoUpload: true });
+    if (!saved) throw new Error("Сначала сохраните замер, затем повторите загрузку фото.");
   }
   const selectedId = state.selected?.id;
-  const file = $("#photo-file").files[0];
-  if (!file) return setMessage($("#form-message"), "Выберите фото.", "error");
+  if (!selectedId) throw new Error("Замер не сохранён — фото нельзя привязать к measurement_photos.");
+
+  setPhotoStatus("Идёт загрузка фото...", "loading");
   setMessage($("#form-message"), "Загружаю фото...");
-  const photoType = $("#photo-type").value;
   const ext = safeExt(file.name);
   const path = `${state.selected.number || "measurement"}_${selectedId}/${Date.now()}_${safeSlug(photoType)}.${ext}`;
   const { error: uploadError } = await supabaseClient.storage.from("measurement-photos").upload(path, file, { upsert: false });
   if (uploadError) throw uploadError;
-  const { error } = await supabaseClient.from("measurement_photos").insert({ measurement_id: selectedId, photo_type: photoType, file_path: path, is_required: true, added_by: state.user.id });
-  if (error) throw error;
-  $("#photo-file").value = "";
+
+  const { data: insertedPhoto, error } = await supabaseClient
+    .from("measurement_photos")
+    .insert({ measurement_id: selectedId, photo_type: photoType, file_path: path, is_required: true, added_by: state.user.id })
+    .select("*")
+    .single();
+  if (error) {
+    await supabaseClient.storage.from("measurement-photos").remove([path]).catch(() => {});
+    throw error;
+  }
+  if (!insertedPhoto?.id || insertedPhoto.measurement_id !== selectedId) {
+    throw new Error("Файл загружен, но запись measurement_photos не создана. Повторите загрузку.");
+  }
+
   await loadPhotos(selectedId);
+  const savedPhoto = selectedPhotos().find((item) => item.id === insertedPhoto.id || item.file_path === path);
+  if (!savedPhoto) {
+    throw new Error("Фото не найдено в measurement_photos после сохранения. Обновите страницу и повторите загрузку.");
+  }
+  fileInput.value = "";
   renderPhotos();
   renderChecks();
-  setMessage($("#form-message"), "Фото загружено только в текущий замер.", "ok");
+  setPhotoStatus("Фото сохранено.", "ok");
+  if (!options.auto) setMessage($("#form-message"), "Фото сохранено в текущем замере.", "ok");
+  return insertedPhoto;
 }
 
 async function deletePhoto(photoId) {
@@ -1281,9 +1412,13 @@ function checkItems() {
     : add("warn", "H не заполнена — в простом режиме это не блокирует замер");
 
   const photos = selectedPhotos();
-  photos.length
-    ? add("ok", `Фото текущего замера: ${photos.length}`)
-    : add("warn", "Фото не добавлены — это пока не блокирует принятие");
+  if (photos.length) {
+    add("ok", `Фото текущего замера: ${photos.length}`);
+  } else if (hasPendingPhotoFile()) {
+    add("warn", "Фото выбрано, но ещё не сохранено в measurement_photos");
+  } else {
+    add("warn", "Фото не добавлены — это пока не блокирует принятие");
+  }
 
   const warmFloorValue = String(measurement.has_warm_floor || "").trim().toLowerCase();
   if (["да", "есть"].includes(warmFloorValue) && !measurement.obstacles_comment) add("warn", "Есть тёплый пол — добавьте комментарий");
@@ -1352,7 +1487,16 @@ function bind() {
     if (event.target.closest("[data-print-preview]")) window.print();
   });
   $("#measurement-form").addEventListener("submit", (event) => { event.preventDefault(); saveMeasurement().catch((e) => setMessage($("#form-message"), e.message, "error")); });
-  $("#upload-photo-btn").addEventListener("click", () => uploadPhoto().catch((e) => setMessage($("#form-message"), e.message, "error")));
+  $("#upload-photo-btn").addEventListener("click", () => {
+    if (!hasPendingPhotoFile()) {
+      updatePhotoStatusFromInput();
+      setMessage($("#form-message"), "Выберите фото.", "error");
+      return;
+    }
+    ensurePendingPhotoSaved("ручной загрузкой").catch((e) => setMessage($("#form-message"), e.message, "error"));
+  });
+  $("#photo-file")?.addEventListener("change", updatePhotoStatusFromInput);
+  $("#photos-next-btn")?.addEventListener("click", () => requestActivateTab("check").catch((e) => setMessage($("#form-message"), e.message, "error")));
   $("#photos-list").addEventListener("click", (event) => {
     const id = event.target.closest("[data-delete-photo-id]")?.dataset.deletePhotoId;
     if (id) deletePhoto(id).catch((e) => setMessage($("#form-message"), e.message, "error"));
@@ -1396,7 +1540,7 @@ function bind() {
   $$("[data-measurement-mode]").forEach((button) => {
     button.addEventListener("click", () => setMeasurementMode(button.dataset.measurementMode));
   });
-  $$(".tab").forEach((tab) => tab.addEventListener("click", () => activateTab(tab.dataset.tab)));
+  $$(".tab").forEach((tab) => tab.addEventListener("click", () => requestActivateTab(tab.dataset.tab).catch((e) => setMessage($("#form-message"), e.message, "error"))));
 }
 
 bind();

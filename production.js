@@ -354,11 +354,22 @@ function productionMatrixShape(v) {
   return v.turn === "winder" ? "winder" : "landing";
 }
 
+function isReadyULandingType(type) {
+  const text = String(type || "");
+  return text === "ready_u_landing_left" || text === "ready_u_landing_right";
+}
+
+function withReadyULandingFields(fields, v) {
+  if (!isReadyULandingType(v?.type) || v?.mode !== "ready") return fields;
+  return [...fields, "ZL", "ZW"];
+}
+
 function productionMatrixFields(project, v, options = {}) {
   const mode = productionMeasurementMode(project);
   const shape = productionMatrixShape(v);
   const source = options.required ? PRODUCTION_REQUIRED_OVERRIDES : PRODUCTION_FIELD_MATRIX;
-  const fields = source[v.mode]?.[mode]?.[shape] || PRODUCTION_FIELD_MATRIX[v.mode]?.[mode]?.[shape] || [];
+  const baseFields = source[v.mode]?.[mode]?.[shape] || PRODUCTION_FIELD_MATRIX[v.mode]?.[mode]?.[shape] || [];
+  const fields = withReadyULandingFields(baseFields, v);
   const sameTread = project?.treadMode?.sameTread !== false;
   return fields.flatMap((code) => {
     if (code === "tread") return sameTread ? ["b"] : ["b1", "b2"];
@@ -414,12 +425,20 @@ function renderIssues(issues) {
   return `<div class="production-issue"><b>Требует уточнения перед производством:</b><ul>${issues.map((issue) => `<li>${escapeHtml(issue)}</li>`).join("")}</ul></div>`;
 }
 
+function productionFieldLabel(code, v) {
+  if (isReadyULandingType(v?.type)) {
+    if (code === "ZL") return "Площадка длина";
+    if (code === "ZW") return "Площадка ширина";
+  }
+  return PRODUCTION_FIELD_LABELS[code] || code;
+}
+
 function renderDimensions(measurement, project) {
   const dims = productionDims(measurement, project);
   const values = productionFieldValues(measurement, project, dims);
   const v = productionVariant(project);
   const rows = productionMatrixFields(project, v).map((code) => {
-    const label = PRODUCTION_FIELD_LABELS[code] || code;
+    const label = productionFieldLabel(code, v);
     if (["N1", "N2", "ZN"].includes(code)) {
       return isPositiveNumber(values[code]) ? countKv(label, `${values[code]} шт`) : "";
     }

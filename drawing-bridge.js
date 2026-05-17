@@ -691,6 +691,15 @@
     },
   };
 
+  function isReadyULandingVariant(v = variant()) {
+    return v?.key === "ready_u_landing_left" || v?.key === "ready_u_landing_right";
+  }
+
+  function withReadyULandingFields(fields, v = variant()) {
+    if (!isReadyULandingVariant(v)) return fields;
+    return [...fields, "ZL", "ZW"];
+  }
+
   function expandMatrixFields(fields) {
     return fields.flatMap((code) => {
       if (code === "tread") return projectState?.treadMode?.sameTread !== false ? ["b"] : ["b1", "b2"];
@@ -703,7 +712,8 @@
     const v = variant();
     const mode = isDetailedMode() ? "detailed" : "simple";
     const shape = v.opening === "straight" ? "straight" : v.turn === "winder" ? "winder" : "landing";
-    const fields = FIELD_MATRIX[v.mode]?.[mode]?.[shape] || FIELD_MATRIX[v.mode]?.[mode]?.turn || [];
+    const baseFields = FIELD_MATRIX[v.mode]?.[mode]?.[shape] || FIELD_MATRIX[v.mode]?.[mode]?.turn || [];
+    const fields = withReadyULandingFields(baseFields, v);
     return expandMatrixFields(fields);
   }
 
@@ -739,6 +749,14 @@
     return fieldDrafts.has(name) ? fieldDrafts.get(name) : readField(name);
   }
 
+  function fieldLabel(code, v = variant()) {
+    if (isReadyULandingVariant(v)) {
+      if (code === "ZL") return "ZL — длина площадки";
+      if (code === "ZW") return "ZW — ширина площадки";
+    }
+    return FIELD_META[code]?.label || code;
+  }
+
   function fieldControl(code) {
     const meta = FIELD_META[code];
     const v = variant();
@@ -748,7 +766,7 @@
     const auto = autoKey ? Boolean(projectState.autoCalc[autoKey]) : false;
     const readonly = autoKey && auto ? "readonly" : "";
     return `<div class="db-field ${isActiveField ? "is-active" : ""}" data-field-wrap="${code}">
-      <label for="db-field-${code}">${escapeHtml(meta.label)}</label>
+      <label for="db-field-${code}">${escapeHtml(fieldLabel(code, v))}</label>
       <div class="${autoKey ? "db-field-row" : ""}">
         <input id="db-field-${code}" data-field="${meta.name}" data-param-code="${code}" ${numericInputAttrs()} value="${escapeHtml(readDraftField(meta.name))}" ${readonly}/>
         ${autoKey ? `<label class="db-auto"><input type="checkbox" data-auto="${autoKey}" ${auto ? "checked" : ""}/> авто</label>` : ""}
@@ -763,7 +781,7 @@
       const vMini = variant();
       const emptyMini = vMini.mode === "empty" || String(projectState.type || "").startsWith("empty_");
       const readonly = isDetailedMode() && !emptyMini && vMini.mode === "ready" && meta.auto && projectState.autoCalc[meta.auto] ? "readonly" : "";
-      return `<label class="db-mini-input ${active}" title="${escapeHtml(meta.label)}">
+      return `<label class="db-mini-input ${active}" title="${escapeHtml(fieldLabel(code, vMini))}">
         <span>${escapeHtml(code)}</span>
         <input data-field="${meta.name}" data-param-code="${code}" ${numericInputAttrs()} value="${escapeHtml(readDraftField(meta.name))}" ${readonly}/>
       </label>`;
@@ -1302,8 +1320,8 @@
       addDim("B1", "B1", p.firstFlightWidth, "мм", "bottom", { x: f1.x, y: f1.y + f1.h }, { x: f1.x + f1.w, y: f1.y + f1.h }, 70);
       addDim("M2", "M2", p.secondFlightLength, "мм", side === "left" ? "right" : "left", { x: f2.x + f2.w, y: f2.y }, { x: f2.x + f2.w, y: f2.y + f2.h }, 70);
       addDim("B2", "B2", p.secondFlightWidth, "мм", "bottom", { x: f2.x, y: f2.y + f2.h }, { x: f2.x + f2.w, y: f2.y + f2.h }, 70);
-      addDim("ZL", "ZL", p.turnLength || totalW, "мм", "top", { x: turn.x, y: turn.y }, { x: turn.x + turn.w, y: turn.y }, 125);
-      addDim("ZW", "ZW", p.turnWidth, "мм", "left", { x: turn.x, y: turn.y }, { x: turn.x, y: turn.y + turn.h }, 125);
+      addDim("ZL", isReadyULandingVariant(v) ? "Площадка длина ZL" : "ZL", p.turnLength || totalW, "мм", "top", { x: turn.x, y: turn.y }, { x: turn.x + turn.w, y: turn.y }, 125);
+      addDim("ZW", isReadyULandingVariant(v) ? "Площадка ширина ZW" : "ZW", p.turnWidth, "мм", "left", { x: turn.x, y: turn.y }, { x: turn.x, y: turn.y + turn.h }, 125);
       if (v.turn === "winder") addDim("ZN", "ZN", p.winderSteps, "шт", "right", { x: turn.x + turn.w, y: turn.y }, { x: turn.x + turn.w, y: turn.y + turn.h }, 170);
       title = "П-образная лестница";
     }

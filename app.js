@@ -8,7 +8,8 @@ const LOCAL_OFFLINE_DRAFT_MESSAGE = "Это локальный офлайн-че
 const PHOTO_OFFLINE_DRAFT_MESSAGE = "Фото для офлайн-черновика будут доступны после синхронизации.";
 const PHOTO_DRAFT_SAVE_REQUIRED_MESSAGE = "Фото не загружено: сначала сохраните черновик.";
 const PHOTO_UPLOAD_OFFLINE_MESSAGE = "Фото нельзя загрузить без интернета. Для офлайн-черновика фото будут добавлены следующим этапом.";
-const OFFLINE_SYNC_UNAVAILABLE_MESSAGE = "Нет интернета. Черновик сохранён в телефоне и будет доступен позже.";
+const OFFLINE_SYNC_UNAVAILABLE_MESSAGE = "Появится интернет — можно будет синхронизировать.";
+const OFFLINE_SYNC_ERROR_MESSAGE = "Не удалось синхронизировать. Черновик сохранён в телефоне, попробуйте ещё раз.";
 const supabaseClient = window.supabase?.createClient ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
@@ -162,6 +163,7 @@ function offlineDraftToMeasurement(draft) {
     server_id: draft.server_id || null,
     server_client_id: draft.server_client_id || null,
     server_number: draft.server_number || "",
+    last_sync_error: draft.last_sync_error || draft.sync_error || "",
     synced_at: draft.synced_at || "",
     created_at: draft.created_at,
     updated_at: draft.updated_at,
@@ -190,20 +192,43 @@ function formatOfflineDraftDate(value) {
 function offlineDraftStatusText(draft = {}) {
   const status = draft.sync_status || "local_only";
   if (status === "syncing") return "Синхронизация...";
-  if (status === "sync_error") return "Ошибка синхронизации";
+  if (status === "sync_error") return `Ошибка синхронизации${draft.last_sync_error || draft.sync_error ? `: ${draft.last_sync_error || draft.sync_error}` : ""}`;
   if (status === "synced") return `Синхронизирован: ${draft.server_number || draft.server_id || "без номера"}`;
   return "Не отправлен";
 }
 
+function canShowOfflineDraftSyncButton(draft = {}) {
+  const status = draft.sync_status || "local_only";
+  return Boolean(
+    navigator.onLine
+    && supabaseClient
+    && state.user
+    && !draft.server_id
+    && (status === "local_only" || status === "sync_error")
+  );
+}
+
+function offlineDraftActionNote(draft = {}) {
+  const status = draft.sync_status || "local_only";
+  if (!navigator.onLine) return OFFLINE_SYNC_UNAVAILABLE_MESSAGE;
+  if (!supabaseClient) return "Supabase недоступен — синхронизация сейчас невозможна.";
+  if (!state.user) return "Войдите в приложение, чтобы синхронизировать черновик.";
+  if (status === "syncing") return `Синхронизирую ${draft.temp_number || "TEMP"}...`;
+  if (status === "synced") return `Синхронизирован: ${draft.server_number || draft.server_id || "без номера"}`;
+  return "";
+}
+
 function canSyncOfflineDraft(draft = {}) {
-  return Boolean(draft.sync_status !== "syncing" && draft.sync_status !== "synced" && !draft.server_id);
+  const status = draft.sync_status || "local_only";
+  return Boolean(!draft.server_id && (status === "local_only" || status === "sync_error"));
 }
 
 function syncOfflineDraftNoticeMessage() {
   if (!state.offlineDrafts.length) return OFFLINE_STARTUP_MESSAGE;
-  return navigator.onLine && supabaseClient
-    ? "Есть локальные TEMP-черновики на этом телефоне. Их можно синхронизировать в Supabase."
-    : OFFLINE_SYNC_UNAVAILABLE_MESSAGE;
+  if (!navigator.onLine) return OFFLINE_SYNC_UNAVAILABLE_MESSAGE;
+  if (!supabaseClient) return "Supabase недоступен — синхронизация сейчас невозможна.";
+  if (!state.user) return "Войдите в приложение, чтобы синхронизировать черновики.";
+  return "Есть локальные TEMP-черновики на этом телефоне. Их можно синхронизировать в Supabase.";
 }
 
 function refreshOfflineDraftNotice() {
@@ -237,17 +262,21 @@ function renderOfflineDrafts() {
     return;
   }
   list.innerHTML = state.offlineDrafts.map((draft) => {
-    const syncDisabled = canSyncOfflineDraft(draft) ? "" : "disabled";
+    const actionNote = offlineDraftActionNote(draft);
+    const syncButton = canShowOfflineDraftSyncButton(draft)
+      ? `<button type="button" class="btn primary" data-sync-offline-draft="${escapeHtml(draft.local_id)}">Синхронизировать</button>`
+      : "";
     return `
     <div class="offline-draft-card" data-local-id="${escapeHtml(draft.local_id)}">
       <div>
         <b>${escapeHtml(draft.temp_number || "TEMP")}</b>
         <span>Офлайн-черновик</span>
         <small class="offline-draft-sync-status">${escapeHtml(offlineDraftStatusText(draft))}</small>
+        ${actionNote ? `<small class="offline-draft-sync-note">${escapeHtml(actionNote)}</small>` : ""}
         <small>Изменён: ${escapeHtml(formatOfflineDraftDate(draft.updated_at))}</small>
       </div>
       <div class="offline-draft-actions">
-        <button type="button" class="btn primary" data-sync-offline-draft="${escapeHtml(draft.local_id)}" ${syncDisabled}>Синхронизировать</button>
+        ${syncButton}
         <button type="button" class="btn secondary" data-open-offline-draft="${escapeHtml(draft.local_id)}">Открыть</button>
         <button type="button" class="btn danger" data-delete-offline-draft="${escapeHtml(draft.local_id)}">Удалить</button>
       </div>
@@ -284,6 +313,7 @@ async function createLocalOfflineDraft() {
     temp_number: tempNumber,
     sync_status: "local_only",
     sync_error: "",
+    last_sync_error: "",
     created_at: now,
     updated_at: now,
     form_data: {
@@ -357,6 +387,7 @@ async function saveLocalOfflineDraftNow(options = {}) {
     temp_number: state.selected.number,
     sync_status: "local_only",
     sync_error: "",
+    last_sync_error: "",
     created_at: current?.created_at || state.selected.created_at || updatedAt,
     updated_at: updatedAt,
     form_data: { client, measurement },
@@ -385,7 +416,7 @@ async function updateOfflineDraftSyncFields(localId, fields) {
 }
 
 async function markOfflineDraftSyncing(localId) {
-  return updateOfflineDraftSyncFields(localId, { sync_status: "syncing", sync_error: "" });
+  return updateOfflineDraftSyncFields(localId, { sync_status: "syncing", sync_error: "", last_sync_error: "" });
 }
 
 async function markOfflineDraftSynced(localId, serverMeasurement) {
@@ -395,19 +426,23 @@ async function markOfflineDraftSynced(localId, serverMeasurement) {
     server_number: serverMeasurement.number,
     synced_at: new Date().toISOString(),
     sync_error: "",
+    last_sync_error: "",
   });
 }
 
 async function markOfflineDraftSyncError(localId, error) {
+  const message = error?.message || String(error);
   return updateOfflineDraftSyncFields(localId, {
     sync_status: "sync_error",
-    sync_error: error?.message || String(error),
+    sync_error: message,
+    last_sync_error: message,
   });
 }
 
 function buildMeasurementPayloadFromOfflineDraft(draft, clientId) {
   const formData = draft?.form_data || {};
   const measurement = { ...(formData.measurement || {}) };
+  delete measurement.number;
   const identity = currentUserIdentity();
   return {
     ...measurement,
@@ -425,9 +460,20 @@ function buildMeasurementPayloadFromOfflineDraft(draft, clientId) {
   };
 }
 
+async function openSyncedOfflineDraft(draft) {
+  if (!draft?.server_id) return null;
+  if (navigator.onLine && supabaseClient && !state.measurements.some((measurement) => measurement.id === draft.server_id)) await loadMeasurements();
+  if (state.measurements.some((measurement) => measurement.id === draft.server_id)) {
+    await selectMeasurement(draft.server_id, { mode: "edit" });
+    return state.selected;
+  }
+  setMessage($("#form-message"), `Этот черновик уже синхронизирован: ${draft.server_number || draft.server_id}`, "ok");
+  return null;
+}
+
 async function syncOfflineDraft(localId) {
-  if (!navigator.onLine || !supabaseClient) {
-    setMessage($("#form-message"), OFFLINE_SYNC_UNAVAILABLE_MESSAGE, "error");
+  if (!navigator.onLine || !supabaseClient || !state.user) {
+    setMessage($("#form-message"), offlineDraftActionNote({ sync_status: "local_only" }) || OFFLINE_SYNC_UNAVAILABLE_MESSAGE, "error");
     refreshOfflineDraftNotice();
     return null;
   }
@@ -438,9 +484,12 @@ async function syncOfflineDraft(localId) {
   if (!draft) return setMessage($("#form-message"), "Локальный черновик не найден в этом телефоне.", "error");
   if (draft.sync_status === "syncing") return setMessage($("#form-message"), "Синхронизация уже выполняется...", "error");
   if (draft.server_id || draft.sync_status === "synced") {
+    await openSyncedOfflineDraft(draft);
     const number = draft.server_number || draft.server_id || "без номера";
-    return setMessage($("#form-message"), `Этот черновик уже синхронизирован: ${number}`, "ok");
+    setMessage($("#form-message"), `Этот черновик уже синхронизирован: ${number}`, "ok");
+    return state.selected;
   }
+  if (!canSyncOfflineDraft(draft)) return setMessage($("#form-message"), "Этот локальный черновик сейчас нельзя синхронизировать.", "error");
 
   state.offlineSyncInFlight.add(localId);
   let clientId = null;
@@ -449,11 +498,14 @@ async function syncOfflineDraft(localId) {
     setMessage($("#form-message"), `Синхронизирую ${draft.temp_number || "TEMP"}...`);
 
     clientId = draft.server_client_id || null;
-    if (!clientId) {
-      const clientPayload = { ...(draft.form_data?.client || {}) };
-      clientPayload.name = String(clientPayload.name || "").trim() || "Без имени";
-      clientPayload.city = clientPayload.city || "Казань";
-      clientPayload.created_by = clientPayload.created_by || state.user?.id;
+    const clientPayload = { ...(draft.form_data?.client || {}) };
+    clientPayload.name = String(clientPayload.name || "").trim() || "Без имени";
+    clientPayload.city = clientPayload.city || "Казань";
+    clientPayload.created_by = clientPayload.created_by || state.user?.id;
+    if (clientId) {
+      const { error: clientUpdateError } = await supabaseClient.from("clients").update(clientPayload).eq("id", clientId);
+      if (clientUpdateError) throw new Error(`Ошибка обновления клиента: ${clientUpdateError.message || clientUpdateError}`);
+    } else {
       const { data: client, error: clientError } = await supabaseClient.from("clients").insert(clientPayload).select("*").single();
       if (clientError) throw new Error(`Ошибка создания клиента: ${clientError.message || clientError}`);
       clientId = client.id;
@@ -463,7 +515,7 @@ async function syncOfflineDraft(localId) {
     const measurementPayload = buildMeasurementPayloadFromOfflineDraft(draft, clientId);
     const { data: measurement, error: measurementError } = await supabaseClient
       .from("measurements")
-      .insert({ ...measurementPayload, number: makeNumber() })
+      .insert(measurementPayload)
       .select("*, clients(*)")
       .single();
     if (measurementError) throw new Error(`Ошибка создания замера: ${measurementError.message || measurementError}`);
@@ -471,12 +523,16 @@ async function syncOfflineDraft(localId) {
     await markOfflineDraftSynced(localId, measurement);
     await loadMeasurements();
     await selectMeasurement(measurement.id, { mode: "edit" });
-    setMessage($("#form-message"), `Черновик ${draft.temp_number || "TEMP"} отправлен. Создан замер ${measurement.number}.`, "ok");
+    if (measurement.number) {
+      setMessage($("#form-message"), `Черновик ${draft.temp_number || "TEMP"} отправлен. Создан замер ${measurement.number}.`, "ok");
+    } else {
+      setMessage($("#form-message"), `Черновик ${draft.temp_number || "TEMP"} отправлен, но Supabase не вернул номер замера.`, "warn");
+    }
     return measurement;
   } catch (error) {
     console.warn("Offline draft sync failed", { localId, clientId, error });
     await markOfflineDraftSyncError(localId, error).catch((markError) => console.warn("Offline draft sync error was not saved", markError));
-    setMessage($("#form-message"), `${error?.message || String(error)}. Синхронизация не завершена. Черновик сохранён в телефоне.`, "error");
+    setMessage($("#form-message"), OFFLINE_SYNC_ERROR_MESSAGE, "error");
     return null;
   } finally {
     state.offlineSyncInFlight.delete(localId);
@@ -736,7 +792,7 @@ function toNumber(value) {
   return Number.isFinite(n) ? n : null;
 }
 
-function makeNumber() {
+function createMeasurementNumber() {
   return `KZN-ZM-${new Date().getFullYear()}-${Math.floor(Math.random() * 900000 + 100000)}`;
 }
 
@@ -1238,7 +1294,7 @@ function showNewMeasurementModePicker() {
 function newMeasurement(mode = MEASUREMENT_MODE_DEFAULT) {
   const normalizedMode = normalizeMeasurementMode(mode);
   state.selected = {
-    number: makeNumber(),
+    number: createMeasurementNumber(),
     status: "Черновик",
     clients: {},
     site_situation: "Пустой проём",

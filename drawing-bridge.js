@@ -211,6 +211,8 @@
       .db-svg .window-glass{stroke:#7dd3fc;stroke-width:2;vector-effect:non-scaling-stroke}
       .db-svg .window-text{font:900 13px system-ui, sans-serif;fill:#0369a1;paint-order:stroke;stroke:#fff;stroke-width:4px}
       .db-svg .step-no{font:800 11px system-ui, sans-serif;fill:#475569;paint-order:stroke;stroke:#fff;stroke-width:3px;text-anchor:middle}
+      .db-svg .flight-step-count-bg{fill:#fff;stroke:#cbd5e1;stroke-width:1.2;opacity:.92;vector-effect:non-scaling-stroke}
+      .db-svg .flight-step-count-text{font:950 13px system-ui,sans-serif;fill:#0f172a;paint-order:stroke;stroke:#fff;stroke-width:3px;stroke-linejoin:round}
       .db-svg .caption{font:900 16px system-ui, sans-serif;fill:#0f172a;paint-order:stroke;stroke:#fff;stroke-width:4px}
       @media(max-width:1000px){
         body:has(.tab.active[data-tab="sizes"]) main{padding:0 2px}
@@ -1175,6 +1177,7 @@
     const dimensions = [];
     const winders = [];
     const flightDirections = {};
+    const stepLabels = [];
     let route = [];
     let title = "";
     let outer = { x: 0, y: 0, w: m1, h: b1 };
@@ -1198,6 +1201,11 @@
     };
     const setFlightDirection = (id, start, end) => {
       flightDirections[id] = { start, end };
+    };
+    const addStepLabel = (flightId, code, value) => {
+      const n = Number(value);
+      if (v.mode !== "ready" || !Number.isFinite(n) || n <= 0) return;
+      stepLabels.push({ flightId, code, value: Math.round(n) });
     };
 
     if (v.key === "empty_straight") {
@@ -1245,6 +1253,7 @@
       outer = { x: 0, y: 0, w: m1, h: b1 };
       setFlightDirection("flight1", { x: f1.x, y: f1.y + f1.h / 2 }, { x: f1.x + f1.w, y: f1.y + f1.h / 2 });
       addTreadsHorizontal(f1, n1);
+      addStepLabel("flight1", "N1", p.firstFlightSteps);
       addDim("M1", "M1", p.firstFlightLength, "мм", "top", { x: 0, y: 0 }, { x: m1, y: 0 }, 70);
       addDim("B1", "B1", p.firstFlightWidth, "мм", "right", { x: m1, y: 0 }, { x: m1, y: b1 }, 70);
       addDim("N1", "N1", p.firstFlightSteps, "шт", "bottom", { x: 0, y: b1 }, { x: m1, y: b1 }, 70);
@@ -1272,6 +1281,8 @@
       setFlightDirection("flight2", right ? { x: f2.x + f2.w, y: f2.y + f2.h / 2 } : { x: f2.x, y: f2.y + f2.h / 2 }, right ? { x: f2.x, y: f2.y + f2.h / 2 } : { x: f2.x + f2.w, y: f2.y + f2.h / 2 });
       addTreadsVertical(f1, n1);
       addTreadsHorizontal(f2, n2);
+      addStepLabel("flight1", "N1", p.firstFlightSteps);
+      addStepLabel("flight2", "N2", p.secondFlightSteps);
       if (v.turn === "winder") {
         const pivot = right ? { x: turn.x, y: turn.y + turn.h } : { x: turn.x + turn.w, y: turn.y + turn.h };
         const startAngle = right ? -Math.PI / 2 : Math.PI;
@@ -1305,6 +1316,8 @@
       setFlightDirection("flight2", { x: f2.x + f2.w / 2, y: f2.y }, { x: f2.x + f2.w / 2, y: f2.y + f2.h });
       addTreadsVertical(f1, n1);
       addTreadsVertical(f2, n2);
+      addStepLabel("flight1", "N1", p.firstFlightSteps);
+      addStepLabel("flight2", "N2", p.secondFlightSteps);
       if (v.turn === "winder") {
         const pivot = { x: turn.x + turn.w / 2, y: turn.y + turn.h };
         const leftToRight = side === "left";
@@ -1326,7 +1339,7 @@
       title = "П-образная лестница";
     }
 
-    return { rects, lines, dimensions, winders, route, outer, title, params: p, flightDirections };
+    return { rects, lines, dimensions, winders, stepLabels, route, outer, title, params: p, flightDirections };
   }
 
   function clamp(value, min, max) {
@@ -1460,6 +1473,7 @@
     const winders = geometry.winders.map((poly) => renderWinder(poly, tr)).join("");
     const lines = geometry.lines.map((line) => renderLine(line, tr)).join("");
     const dimensions = geometry.dimensions.map((dim) => renderDimension(dim, tr)).join("");
+    const stepLabels = renderStepLabels(geometry, tr);
     const route = renderRoute(geometry.route, tr);
     const showSiteMarks = shouldRenderSiteMarks();
     const walls = showSiteMarks ? renderWalls(geometry, tr) : "";
@@ -1469,7 +1483,7 @@
     const edges = showSiteMarks ? renderEdgeExtensions(geometry, tr) : "";
     const obstacles = showSiteMarks ? renderObstacles(geometry, tr) : "";
     const title = `<text class="caption" x="28" y="38">${escapeHtml(geometry.title)}</text>`;
-    return `<svg class="db-svg" viewBox="0 0 ${viewport.w} ${viewport.h}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Замерная схема лестницы">${defs}<rect width="${viewport.w}" height="${viewport.h}" fill="#fff"/>${grid}${title}<g>${rects}${winders}${lines}${route}${walls}${windows}${ascent}${balustrade}${edges}${obstacles}${dimensions}</g></svg>`;
+    return `<svg class="db-svg" viewBox="0 0 ${viewport.w} ${viewport.h}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Замерная схема лестницы">${defs}<rect width="${viewport.w}" height="${viewport.h}" fill="#fff"/>${grid}${title}<g>${rects}${winders}${lines}${route}${walls}${windows}${ascent}${balustrade}${edges}${obstacles}${dimensions}${stepLabels}</g></svg>`;
   }
 
   function renderRect(r, tr) {
@@ -1480,6 +1494,25 @@
     const labelSvg = label ? `<text class="caption" x="${box.x + box.w / 2}" y="${box.y + Math.min(box.h - 10, 28)}" text-anchor="middle">${label}</text>` : "";
     const hit = `<rect class="zone-hit" data-zone="${r.zone}" x="${box.x}" y="${box.y}" width="${box.w}" height="${box.h}"/>`;
     return `<g class="${active}"><rect class="${className}${active}" data-zone="${r.zone}" x="${box.x}" y="${box.y}" width="${box.w}" height="${box.h}"/>${hit}${labelSvg}</g>`;
+  }
+
+  function renderStepLabels(geometry, tr) {
+    return (geometry.stepLabels || []).map((item) => {
+      const rect = geometry.rects.find((r) => r.id === item.flightId);
+      if (!rect) return "";
+      const box = tr.rect(rect);
+      const label = `${item.code} ${item.value} ступ.`;
+      const textWidth = Math.max(78, label.length * 7.4);
+      const textHeight = 24;
+      const x = box.x + box.w / 2;
+      const y = box.y + Math.min(Math.max(54, box.h * 0.48), Math.max(22, box.h - 12));
+      const bgX = x - textWidth / 2;
+      const bgY = y - textHeight + 5;
+      return `<g class="flight-step-count" data-flight="${escapeHtml(item.flightId)}" data-param="${escapeHtml(item.code)}">
+        <rect class="flight-step-count-bg" x="${bgX}" y="${bgY}" width="${textWidth}" height="${textHeight}" rx="7" ry="7"/>
+        <text class="flight-step-count-text" x="${x}" y="${y}" text-anchor="middle">${escapeHtml(label)}</text>
+      </g>`;
+    }).join("");
   }
 
   function renderLine(line, tr) {

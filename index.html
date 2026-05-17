@@ -37,10 +37,11 @@
           <div class="card auth-card">
             <h2>Вход сотрудника</h2>
             <p class="muted-text">Доступ только для замерщиков, конструктора, менеджера и администратора.</p>
-            <label>Email</label>
-            <input id="email" type="email" placeholder="admin@tekstura.ru" autocomplete="email" />
-            <label>Пароль</label>
+            <label>Логин</label>
+            <input id="email" type="text" placeholder="ruslan" autocomplete="username" />
+            <label>Код / пароль</label>
             <input id="password" type="password" placeholder="••••••••" autocomplete="current-password" />
+            <p class="muted-text small">Введите короткий логин: ruslan, rifat, vildan, vitalik или полный email.</p>
             <button id="login-btn" class="btn primary full">Войти</button>
             <button id="signup-btn" class="btn secondary full hidden" aria-hidden="true" tabindex="-1">Создать пользователя в Supabase</button>
             <p class="muted-text small">Доступ выдаёт администратор. Для работы используйте выданный логин и пароль.</p>
@@ -109,6 +110,7 @@
                   </div>
                   <div class="form-head-side">
                     <span id="form-status" class="badge">Черновик</span>
+                    <span id="form-measurer" class="badge muted hidden"></span>
                     <div id="measurement-mode-box" class="measurement-mode-box">
                       <div class="mode-title">Режим замера: <b id="measurement-mode-current">Простой</b></div>
                       <div class="mode-segment">
@@ -296,7 +298,7 @@
         </section>
       </main>
     </div>
-    <script src="./app.js?v=20260515-v14"></script>
+    <script src="./app.js?v=20260517-v24"></script>
     <script src="./photo-preview.js?v=20260515-v14"></script>
     <script src="./details-enhance.js?v=20260515-v14"></script>
     <script src="./scheme-sketch.js?v=20260506-disabled"></script>

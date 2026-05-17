@@ -207,7 +207,10 @@ input:focus, textarea:focus, select:focus { border-color: #111827; box-shadow: 0
 .form-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 18px; border-top: 1px solid var(--line); padding-top: 16px; }
 .tab-step-actions { display: flex; justify-content: flex-end; margin-top: 16px; }
 
-.photo-upload { display: grid; grid-template-columns: 220px 1fr auto; gap: 12px; align-items: end; }
+.photo-upload { display: grid; grid-template-columns: 220px 1fr; gap: 12px; align-items: end; }
+.photo-file-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.photo-file-btn { cursor: pointer; text-align: center; }
+.photo-help { margin: 10px 0 0; color: var(--muted); font-size: 13px; font-weight: 700; }
 .photo-status { margin: 10px 0 12px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); background: #f8fafc; color: var(--muted); font-weight: 800; }
 .photo-status.pending { border-color: #fde68a; background: #fffbeb; color: #92400e; }
 .photo-status.loading { border-color: #bfdbfe; background: #eff6ff; color: #1d4ed8; }
@@ -331,7 +334,7 @@ body:not([data-user-role*="admin"]):not([data-user-role*="manager"]):not([data-u
   .form-head{display:grid}.form-head-side{justify-items:stretch;max-width:none}.measurement-mode-box{justify-items:stretch}.mode-note{text-align:left;max-width:none}
   .tabs{gap:6px;padding-bottom:8px}.tab{padding:10px 12px;min-height:42px}
   .two,.three,.four{grid-template-columns:1fr}
-  .photo-upload{grid-template-columns:1fr}.photos-list{grid-template-columns:1fr}
+  .photo-upload{grid-template-columns:1fr}.photo-file-actions{display:grid;grid-template-columns:1fr}.photos-list{grid-template-columns:1fr}
   .form-actions{position:sticky;bottom:0;background:rgba(255,255,255,.95);backdrop-filter:blur(10px);z-index:9;margin-left:-12px;margin-right:-12px;padding:10px 12px;border-top:1px solid var(--line)}
   .form-actions .btn,.form-actions a{width:100%;min-height:46px}
 }
@@ -344,6 +347,7 @@ body[data-measurement-mode="simple"] [data-simple-hidden],
   .form-actions{grid-template-columns:1fr}
   .form-actions .btn{min-height:48px}
   .photo-upload{grid-template-columns:1fr}
+  .photo-file-actions{display:grid;grid-template-columns:1fr}
 }
 
 /* v15: mobile-first measurement workspace */

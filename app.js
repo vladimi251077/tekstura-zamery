@@ -1,3 +1,29 @@
+const ONLINE_STATUS_TEXT = "Онлайн";
+const OFFLINE_STATUS_TEXT = "Офлайн — приложение открыто, данные в этом PR ещё не сохраняются локально";
+
+function updateNetworkStatus() {
+  const status = document.getElementById("offline-status");
+  if (!status) return;
+  const isOnline = navigator.onLine;
+  status.hidden = false;
+  status.textContent = isOnline ? ONLINE_STATUS_TEXT : OFFLINE_STATUS_TEXT;
+  status.classList.toggle("offline", !isOnline);
+  status.classList.toggle("online", isOnline);
+}
+
+function setupNetworkStatus() {
+  updateNetworkStatus();
+  window.addEventListener("online", updateNetworkStatus);
+  window.addEventListener("offline", updateNetworkStatus);
+}
+
+function registerServiceWorker() {
+  if (!("serviceWorker" in navigator)) return;
+  navigator.serviceWorker.register("./service-worker.js").catch((error) => {
+    console.warn("Service worker registration failed", error);
+  });
+}
+
 const SUPABASE_URL = "https://rhnlykqqhwweaywjopvm.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJobmx5a3FxaHd3ZWF5d2pvcHZtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYxODE0NjksImV4cCI6MjA5MTc1NzQ2OX0.a0K1q7VKDBRW_7A6fbf5jyMOqO0KpRXQdn8XMBeXfwg";
 
@@ -1579,5 +1605,7 @@ function bind() {
   $$(".tab").forEach((tab) => tab.addEventListener("click", () => requestActivateTab(tab.dataset.tab).catch((e) => setMessage($("#form-message"), e.message, "error"))));
 }
 
+setupNetworkStatus();
+registerServiceWorker();
 bind();
 init().catch((e) => { console.error(e); setMessage($("#auth-message"), e.message, "error"); });

@@ -5,6 +5,8 @@ const SUPABASE_PROJECT_REF = new URL(SUPABASE_URL).hostname.split(".")[0];
 const SUPABASE_AUTH_STORAGE_KEY = `sb-${SUPABASE_PROJECT_REF}-auth-token`;
 const OFFLINE_STARTUP_MESSAGE = "Офлайн. Интернет недоступен. Можно создать локальный TEMP-черновик: данные и размеры сохранятся в этом телефоне.";
 const LOCAL_OFFLINE_DRAFT_MESSAGE = "Это локальный офлайн-черновик. Фото и раздел для изготовителя будут доступны после синхронизации в Supabase.";
+const PHOTO_OFFLINE_DRAFT_MESSAGE = "Фото для офлайн-черновика будут доступны после синхронизации.";
+const PHOTO_DRAFT_SAVE_REQUIRED_MESSAGE = "Фото не загружено: сначала сохраните черновик.";
 const OFFLINE_SYNC_UNAVAILABLE_MESSAGE = "Нет интернета. Черновик сохранён в телефоне и будет доступен позже.";
 const supabaseClient = window.supabase?.createClient ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const $ = (s) => document.querySelector(s);
@@ -141,6 +143,10 @@ function canEditLocalOfflineDraft(measurement = state.selected) {
 
 function offlineDraftMessage() {
   return LOCAL_OFFLINE_DRAFT_MESSAGE;
+}
+
+function offlineDraftPhotoMessage() {
+  return PHOTO_OFFLINE_DRAFT_MESSAGE;
 }
 
 function offlineDraftToMeasurement(draft) {
@@ -1845,8 +1851,8 @@ function setPhotoInputsDisabled(disabled) {
 function handlePhotoInputChange(event) {
   if (isLocalOfflineDraft()) {
     clearPhotoInputs();
-    setPhotoStatus(offlineDraftMessage(), "error");
-    setMessage($("#form-message"), offlineDraftMessage(), "error");
+    setPhotoStatus(offlineDraftPhotoMessage(), "error");
+    setMessage($("#form-message"), offlineDraftPhotoMessage(), "error");
     return;
   }
   const changedInput = event.currentTarget;
@@ -1855,7 +1861,7 @@ function handlePhotoInputChange(event) {
     if (input !== changedInput) input.value = "";
   });
   if (!hasPendingPhotoFile()) return updatePhotoStatusFromInput();
-  setPhotoStatus("Фото выбрано. Начинаю загрузку...", "pending");
+  setPhotoStatus(state.selected?.id ? "Фото выбрано. Начинаю загрузку..." : "Сначала сохраняю черновик...", "pending");
   ensurePendingPhotoSaved("выбором фото").catch((e) => setMessage($("#form-message"), userFacingError(e), "error"));
 }
 
@@ -1868,8 +1874,8 @@ function setPhotoStatus(text, type = "") {
 
 function updatePhotoStatusFromInput() {
   if (state.photoUploadPromise) return;
-  if (isLocalOfflineDraft()) return setPhotoStatus(offlineDraftMessage(), "error");
-  if (hasPendingPhotoFile()) return setPhotoStatus("Фото выбрано. Начинаю загрузку...", "pending");
+  if (isLocalOfflineDraft()) return setPhotoStatus(offlineDraftPhotoMessage(), "error");
+  if (hasPendingPhotoFile()) return setPhotoStatus(state.selected?.id ? "Фото выбрано. Начинаю загрузку..." : "Сначала сохраняю черновик...", "pending");
   if (selectedPhotos().length) return setPhotoStatus(`Фото сохранены: ${selectedPhotos().length}.`, "ok");
   setPhotoStatus("Фото не выбрано.");
 }
@@ -1880,24 +1886,28 @@ async function ensurePendingPhotoSaved(actionLabel = "переходом дал�
       await state.photoUploadPromise;
       return true;
     } catch (error) {
-      setMessage($("#form-message"), `Фото не сохранено: ${userFacingError(error)}`, "error");
-      setPhotoStatus("Фото не сохранено. Попробуйте ещё раз.", "error");
+      const message = userFacingError(error) === PHOTO_DRAFT_SAVE_REQUIRED_MESSAGE ? PHOTO_DRAFT_SAVE_REQUIRED_MESSAGE : `Фото не сохранено: ${userFacingError(error)}`;
+      setMessage($("#form-message"), message, "error");
+      setPhotoStatus(userFacingError(error) === PHOTO_DRAFT_SAVE_REQUIRED_MESSAGE ? PHOTO_DRAFT_SAVE_REQUIRED_MESSAGE : "Фото не сохранено. Попробуйте ещё раз.", "error");
       return false;
     }
   }
   if (!hasPendingPhotoFile()) return true;
   try {
-    setPhotoStatus("Фото выбрано. Начинаю загрузку...", "pending");
-    setMessage($("#form-message"), "Сохраняю выбранные фото...");
+    setPhotoStatus(state.selected?.id ? "Фото выбрано. Начинаю загрузку..." : "Сначала сохраняю черновик...", "pending");
+    setMessage($("#form-message"), state.selected?.id ? "Сохраняю выбранные фото..." : "Сначала сохраняю черновик...");
     state.photoUploadPromise = uploadPhoto({ auto: true });
     const savedPhotos = await state.photoUploadPromise;
     const savedCount = Array.isArray(savedPhotos) ? savedPhotos.length : 1;
+    if (savedCount <= 0) return false;
     setMessage($("#form-message"), `Фото сохранены: ${savedCount}.`, "ok");
     return true;
   } catch (error) {
-    setMessage($("#form-message"), `Фото не сохранено: ${userFacingError(error)}`, "error");
+    const errorText = userFacingError(error);
+    const message = errorText === PHOTO_DRAFT_SAVE_REQUIRED_MESSAGE ? PHOTO_DRAFT_SAVE_REQUIRED_MESSAGE : `Фото не сохранено: ${errorText}`;
+    setMessage($("#form-message"), message, "error");
     if (!photoStatusElement()?.classList.contains("error")) {
-      setPhotoStatus("Фото не сохранено. Проверьте интернет и повторите загрузку.", "error");
+      setPhotoStatus(errorText === PHOTO_DRAFT_SAVE_REQUIRED_MESSAGE ? PHOTO_DRAFT_SAVE_REQUIRED_MESSAGE : "Фото не сохранено. Проверьте интернет и повторите загрузку.", "error");
     }
     return false;
   } finally {
@@ -1915,8 +1925,8 @@ function renderPhotos() {
   const photos = selectedPhotos();
   const title = escapeHtml(state.selected.number || "новый замер");
   if (isLocalOfflineDraft()) {
-    box.innerHTML = `<div class="photo-scope-note"><b>Фото этого замера:</b> ${title}.</div><p class="muted-text">${escapeHtml(offlineDraftMessage())}</p>`;
-    setPhotoStatus(offlineDraftMessage(), "error");
+    box.innerHTML = `<div class="photo-scope-note"><b>Фото этого замера:</b> ${title}.</div><p class="muted-text">${escapeHtml(offlineDraftPhotoMessage())}</p>`;
+    setPhotoStatus(offlineDraftPhotoMessage(), "error");
     return;
   }
   const hiddenNote = state.hiddenForeignPhotos > 0 ? ` <span class="photo-warning">Скрыто чужих/старых записей: ${state.hiddenForeignPhotos}.</span>` : "";
@@ -1969,8 +1979,9 @@ async function uploadSinglePhotoFile(file, photoType, selectedId, index, total) 
 
 async function uploadPhoto(options = {}) {
   if (isLocalOfflineDraft()) {
-    setPhotoStatus(offlineDraftMessage(), "error");
-    setMessage($("#form-message"), offlineDraftMessage(), "error");
+    clearPhotoInputs();
+    setPhotoStatus(offlineDraftPhotoMessage(), "error");
+    setMessage($("#form-message"), offlineDraftPhotoMessage(), "error");
     return [];
   }
   if (!supabaseClient || !navigator.onLine) {
@@ -1984,8 +1995,19 @@ async function uploadPhoto(options = {}) {
   }
   const photoType = $("#photo-type")?.value || "Другое";
   if (!state.selected?.id) {
-    const saved = await saveMeasurement({ skipPendingPhotoUpload: true });
-    if (!saved) throw new Error("Сначала сохраните замер, затем повторите загрузку фото.");
+    setPhotoStatus("Сначала сохраняю черновик...", "pending");
+    setMessage($("#form-message"), "Сначала сохраняю черновик...");
+    let saved = null;
+    try {
+      saved = await saveMeasurement({ skipPendingPhotoUpload: true });
+    } catch (error) {
+      console.warn("Photo draft save failed", error);
+    }
+    if (!saved || !state.selected?.id) {
+      setPhotoStatus(PHOTO_DRAFT_SAVE_REQUIRED_MESSAGE, "error");
+      setMessage($("#form-message"), PHOTO_DRAFT_SAVE_REQUIRED_MESSAGE, "error");
+      throw new Error(PHOTO_DRAFT_SAVE_REQUIRED_MESSAGE);
+    }
   }
   const selectedId = state.selected?.id;
   if (!selectedId) throw new Error("Замер не сохранён — фото нельзя привязать к measurement_photos.");

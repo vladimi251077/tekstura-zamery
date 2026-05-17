@@ -7,6 +7,78 @@ const $$ = (s) => Array.from(document.querySelectorAll(s));
 
 const state = { user: null, profile: null, measurements: [], selected: null, photos: [], photoScopeId: null, hiddenForeignPhotos: 0 };
 
+const LOGIN_USERS = {
+  ruslan: {
+    email: "ruslan@tekstura-zamery.local",
+    name: "Руслан",
+    role: "zamer",
+  },
+  rifat: {
+    email: "rifat@tekstura-zamery.local",
+    name: "Рифат",
+    role: "zamer",
+  },
+  vildan: {
+    email: "vildan@tekstura-zamery.local",
+    name: "Вильдан",
+    role: "zamer",
+  },
+  vitalik: {
+    email: "vitalik@tekstura-zamery.local",
+    name: "Виталик",
+    role: "zamer",
+  },
+  vladimir: {
+    email: "golovin-vla@yandex.ru",
+    name: "Владимир",
+    role: "admin",
+  },
+};
+
+function normalizeLogin(login) {
+  const value = String(login || "").trim().toLowerCase();
+  if (!value) return "";
+  if (value.includes("@")) return value;
+  return LOGIN_USERS[value]?.email || `${value}@tekstura-zamery.local`;
+}
+
+function knownLoginByEmail(email) {
+  const normalizedEmail = String(email || "").trim().toLowerCase();
+  return Object.entries(LOGIN_USERS).find(([, user]) => user.email.toLowerCase() === normalizedEmail) || null;
+}
+
+function userMetadataName(user = state.user) {
+  const metadata = user?.user_metadata || {};
+  return metadata.name || metadata.full_name || metadata.display_name || "";
+}
+
+function currentUserIdentity(user = state.user) {
+  const known = knownLoginByEmail(user?.email);
+  if (known) {
+    const [login, info] = known;
+    return { login, name: info.name, role: info.role, email: info.email, userId: user?.id || null };
+  }
+  const email = String(user?.email || "").trim();
+  const profileName = String(state.profile?.full_name || "").trim();
+  const metadataName = String(userMetadataName(user) || "").trim();
+  return {
+    login: email,
+    name: profileName || metadataName || email || "Пользователь",
+    role: state.profile?.role || "zamer",
+    email,
+    userId: user?.id || null,
+  };
+}
+
+function measurementMeasurerName(measurement) {
+  return String(measurement?.measurer_name || "").trim();
+}
+
+function measurerPreviewRow(measurement) {
+  const name = measurementMeasurerName(measurement);
+  return name ? previewRow("Замерщик", name) : "";
+}
+
 const optionLists = {
   stepMaterials: ["ясень", "дуб", "бук", "берёза", "сосна", "лиственница", "МДФ", "фанера", "бетон", "металл", "другое"],
   railingMaterials: ["стекло", "металл", "дерево", "нержавейка", "труба", "ковка", "комбинированное", "без ограждения", "другое"],
@@ -346,7 +418,16 @@ function showApp(isAuthed) {
 
 async function loadProfile() {
   const { data } = await supabaseClient.from("profiles").select("*").eq("id", state.user.id).maybeSingle();
-  state.profile = data || { id: state.user.id, full_name: state.user.email?.split("@")[0] || "Пользователь", role: "zamer" };
+  if (data) {
+    state.profile = data;
+    return;
+  }
+  const identity = currentUserIdentity(state.user);
+  state.profile = {
+    id: state.user.id,
+    full_name: identity.name || state.user.email?.split("@")[0] || "Пользователь",
+    role: identity.role || "zamer",
+  };
 }
 
 async function init() {
@@ -360,8 +441,9 @@ async function init() {
 
 async function login() {
   setMessage($("#auth-message"), "Вход...");
-  const { data, error } = await supabaseClient.auth.signInWithPassword({ email: $("#email").value.trim(), password: $("#password").value });
-  if (error) return setMessage($("#auth-message"), error.message, "error");
+  const email = normalizeLogin($("#email").value);
+  const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password: $("#password").value });
+  if (error) return setMessage($("#auth-message"), "Неверный логин или код", "error");
   state.user = data.user;
   await loadProfile();
   showApp(true);
@@ -371,7 +453,7 @@ async function login() {
 
 async function signup() {
   setMessage($("#auth-message"), "Создаю пользователя...");
-  const { data, error } = await supabaseClient.auth.signUp({ email: $("#email").value.trim(), password: $("#password").value });
+  const { data, error } = await supabaseClient.auth.signUp({ email: normalizeLogin($("#email").value), password: $("#password").value });
   if (error) return setMessage($("#auth-message"), error.message, "error");
   setMessage($("#auth-message"), "Пользователь создан. Теперь нажмите Войти.", "ok");
   if (data.user) state.user = data.user;
@@ -491,7 +573,8 @@ function renderList() {
     const c = m.clients || {};
     const active = state.selected?.id === m.id ? "active" : "";
     const modeLabel = MEASUREMENT_MODE_LABELS[modeFromDrawingProject(m.drawing_project_json)];
-    return `<button class="measurement-item ${active}" data-id="${m.id}"><div class="number">${m.number}</div><div>${c.name || "Клиент не указан"}</div><div class="address">${c.address || "Адрес не указан"}</div><div class="measurement-meta"><span class="small-chip">${m.status}</span><span class="small-chip">${m.site_situation}</span><span class="small-chip">${m.opening_type}</span><span class="small-chip mode-chip">${modeLabel}</span></div></button>`;
+    const measurerChip = measurementMeasurerName(m) ? `<span class="small-chip">Замерщик: ${escapeHtml(measurementMeasurerName(m))}</span>` : "";
+    return `<button class="measurement-item ${active}" data-id="${escapeHtml(m.id)}"><div class="number">${escapeHtml(m.number)}</div><div>${escapeHtml(c.name || "Клиент не указан")}</div><div class="address">${escapeHtml(c.address || "Адрес не указан")}</div><div class="measurement-meta"><span class="small-chip">${escapeHtml(m.status)}</span><span class="small-chip">${escapeHtml(m.site_situation)}</span><span class="small-chip">${escapeHtml(m.opening_type)}</span><span class="small-chip mode-chip">${escapeHtml(modeLabel)}</span>${measurerChip}</div></button>`;
   }).join("");
   $$(".measurement-item").forEach((btn) => btn.addEventListener("click", () => selectMeasurement(btn.dataset.id)));
 }
@@ -548,6 +631,9 @@ function newMeasurement(mode = MEASUREMENT_MODE_DEFAULT) {
     object_stage: "Черновая",
     has_warm_floor: "Не знаю",
     drawing_project_json: JSON.stringify({ schemaVersion: 2, measurementMode: normalizedMode, type: "empty_straight", units: "mm" }),
+    measurer_name: currentUserIdentity().name,
+    measurer_login: currentUserIdentity().login,
+    measurer_user_id: state.user?.id || null,
   };
   state.photos = [];
   state.photoScopeId = null;
@@ -603,6 +689,12 @@ function fillForm(m) {
   form.has_ventilation.checked = Boolean(m.has_ventilation);
   $("#form-title").textContent = m.number || "Новый замер";
   $("#form-status").textContent = m.status || "Черновик";
+  const formMeasurer = $("#form-measurer");
+  const measurerName = measurementMeasurerName(m);
+  if (formMeasurer) {
+    formMeasurer.textContent = measurerName ? `Замерщик: ${measurerName}` : "";
+    formMeasurer.classList.toggle("hidden", !measurerName);
+  }
   setMeasurementMode(modeFromDrawingProject(form.drawing_project_json?.value || m.drawing_project_json), { notify: false, renderList: false });
   window.TeksturaZamerState = state;
   document.dispatchEvent(new CustomEvent("tekstura:measurement-loaded", { detail: { measurement: m } }));
@@ -761,7 +853,19 @@ async function saveMeasurement(options = {}) {
     if (error) throw error;
     clientId = data.id;
   }
-  const payload = { ...measurement, client_id: clientId, created_by: state.selected?.created_by || state.user.id, measurer_id: state.selected?.measurer_id || state.user.id };
+  const isNewMeasurement = !state.selected?.id;
+  const identity = currentUserIdentity();
+  const payload = {
+    ...measurement,
+    client_id: clientId,
+    created_by: state.selected?.created_by || state.user.id,
+    measurer_id: state.selected?.measurer_id || state.user.id,
+  };
+  if (isNewMeasurement) {
+    payload.measurer_name = state.selected?.measurer_name || identity.name;
+    payload.measurer_login = state.selected?.measurer_login || identity.login;
+    payload.measurer_user_id = state.selected?.measurer_user_id || identity.userId;
+  }
   if (state.selected?.id) {
     const { data, error } = await supabaseClient.from("measurements").update(payload).eq("id", state.selected.id).select("*, clients(*)").single();
     if (error) throw error;
@@ -1009,6 +1113,7 @@ function renderPreview() {
         ${previewRow("Телефон", c.phone)}
         ${previewRow("Адрес", c.address)}
         ${previewRow("Тип объекта", m.object_type || "Частный дом")}
+        ${measurerPreviewRow(m)}
         ${previewRow("Что есть", m.site_situation)}
         ${previewRow("Тип проёма", m.opening_type)}
         ${previewRow("Направление", m.stair_direction)}

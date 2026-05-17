@@ -45,6 +45,10 @@ function productionMeasurementMode(project) {
   return project?.measurementMode === "detailed" ? "detailed" : "simple";
 }
 
+function measurementMeasurerName(measurement) {
+  return String(measurement?.measurer_name || "").trim();
+}
+
 function setMessage(el, message, type = "") {
   if (!el) return;
   el.textContent = message || "";
@@ -527,6 +531,7 @@ function renderCard() {
         <p><b>Клиент:</b> ${escapeHtml(c.name || "Без имени")}</p>
         <p><b>Адрес:</b> ${escapeHtml(c.address || "Адрес не указан")}</p>
         <p><b>Телефон:</b> ${escapeHtml(c.phone || "—")}</p>
+        ${measurementMeasurerName(m) ? `<p><b>Замерщик:</b> ${escapeHtml(measurementMeasurerName(m))}</p>` : ""}
         <p><b>Тип объекта / схема:</b> ${escapeHtml(m.site_situation || m.object_type || "Тип объекта не указан")} · ${escapeHtml(project.type || m.opening_type || "Схема не выбрана")}</p>
         <div class="production-badges"><span class="production-badge">${escapeHtml(m.status || "Готовый замер")}</span><span class="production-badge">${escapeHtml(project.measurementMode === "detailed" ? "Детальный" : "Простой")}</span><span class="production-badge">${escapeHtml(project.type || m.opening_type || "Схема")}</span></div>
         ${renderProductionStatusControl(m)}

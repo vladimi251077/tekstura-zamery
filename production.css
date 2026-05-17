@@ -389,6 +389,8 @@
 .production-svg .db-svg .window-mark { fill:#e0f2fe; stroke:#0284c7; stroke-width:3; vector-effect:non-scaling-stroke; }
 .production-svg .db-svg .window-text { font:900 13px system-ui, sans-serif; fill:#0369a1; paint-order:stroke; stroke:#fff; stroke-width:4px; }
 .production-svg .db-svg .step-no { font:800 11px system-ui, sans-serif; fill:#475569; paint-order:stroke; stroke:#fff; stroke-width:3px; text-anchor:middle; }
+.production-svg .db-svg .flight-step-count-bg { fill:#fff; stroke:#cbd5e1; stroke-width:1.2; opacity:.92; vector-effect:non-scaling-stroke; }
+.production-svg .db-svg .flight-step-count-text { font:950 13px system-ui,sans-serif; fill:#0f172a; paint-order:stroke; stroke:#fff; stroke-width:3px; stroke-linejoin:round; }
 .production-svg .db-svg .caption { font:900 16px system-ui, sans-serif; fill:#0f172a; paint-order:stroke; stroke:#fff; stroke-width:4px; }
 .production-svg .db-svg .dim-hit,
 .production-svg .db-svg .wall-hit,

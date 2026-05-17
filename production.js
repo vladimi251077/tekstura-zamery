@@ -254,6 +254,81 @@ function pickNumber(...values) {
   return null;
 }
 
+
+function productionStepCountLabels(measurement, project) {
+  const type = String(project?.type || "");
+  if (!type.startsWith("ready")) return [];
+  const p = project?.params || {};
+  const labels = [];
+  const n1 = pickNumber(p.N1, p.firstFlightSteps, measurement?.flight1_steps_count);
+  const n2 = pickNumber(p.N2, p.secondFlightSteps, measurement?.flight2_steps_count);
+  if (type === "ready_straight") {
+    if (n1) labels.push({ flightId: "flight1", code: "N1", value: Math.round(n1) });
+    return labels;
+  }
+  if (n1) labels.push({ flightId: "flight1", code: "N1", value: Math.round(n1) });
+  if (n2) labels.push({ flightId: "flight2", code: "N2", value: Math.round(n2) });
+  return labels;
+}
+
+function flightStepLabelPosition(box) {
+  return {
+    x: box.x + box.w / 2,
+    y: box.y + Math.min(Math.max(54, box.h * 0.48), Math.max(22, box.h - 12)),
+  };
+}
+
+function renderProductionStepCountNode(doc, box, item) {
+  const ns = "http://www.w3.org/2000/svg";
+  const group = doc.createElementNS(ns, "g");
+  const label = `${item.code} ${item.value} ступ.`;
+  const { x, y } = flightStepLabelPosition(box);
+  const textWidth = Math.max(78, label.length * 7.4);
+  const textHeight = 24;
+  group.setAttribute("class", "flight-step-count");
+  group.setAttribute("data-flight", item.flightId);
+  group.setAttribute("data-param", item.code);
+  const rect = doc.createElementNS(ns, "rect");
+  rect.setAttribute("class", "flight-step-count-bg");
+  rect.setAttribute("x", String(x - textWidth / 2));
+  rect.setAttribute("y", String(y - textHeight + 5));
+  rect.setAttribute("width", String(textWidth));
+  rect.setAttribute("height", String(textHeight));
+  rect.setAttribute("rx", "7");
+  rect.setAttribute("ry", "7");
+  const text = doc.createElementNS(ns, "text");
+  text.setAttribute("class", "flight-step-count-text");
+  text.setAttribute("x", String(x));
+  text.setAttribute("y", String(y));
+  text.setAttribute("text-anchor", "middle");
+  text.textContent = label;
+  group.append(rect, text);
+  return group;
+}
+
+function enhanceProductionSvg(svgText, measurement, project) {
+  if (!svgText || typeof DOMParser === "undefined") return svgText || "";
+  const labels = productionStepCountLabels(measurement, project);
+  if (!labels.length) return svgText;
+  const parsed = new DOMParser().parseFromString(svgText, "image/svg+xml");
+  const svg = parsed.documentElement;
+  if (!svg || svg.nodeName.toLowerCase() !== "svg") return svgText;
+  svg.querySelectorAll(".flight-step-count").forEach((node) => node.remove());
+  labels.forEach((item) => {
+    const rect = svg.querySelector(`rect[data-zone="${item.flightId}"]:not(.zone-hit)`);
+    if (!rect) return;
+    const box = {
+      x: rawNumber(rect.getAttribute("x")) || 0,
+      y: rawNumber(rect.getAttribute("y")) || 0,
+      w: rawNumber(rect.getAttribute("width")) || 0,
+      h: rawNumber(rect.getAttribute("height")) || 0,
+    };
+    if (box.w <= 0 || box.h <= 0) return;
+    svg.appendChild(renderProductionStepCountNode(parsed, box, item));
+  });
+  return new XMLSerializer().serializeToString(svg);
+}
+
 function dimKv(label, value) {
   return isPositiveNumber(value) ? kv(label, num(value)) : "";
 }
@@ -540,7 +615,7 @@ function renderCard() {
   card.classList.remove("hidden");
   empty.classList.add("hidden");
   syncProductionLayoutState();
-  const svg = m.drawing_svg || "";
+  const svg = enhanceProductionSvg(m.drawing_svg || "", m, project);
   const issues = collectIssues(m, project, finish, svg);
   const detailed = productionMeasurementMode(project) === "detailed";
   card.innerHTML = `

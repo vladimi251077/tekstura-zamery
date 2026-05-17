@@ -14,6 +14,7 @@ const state = {
   photoScopeId: null,
   hiddenForeignPhotos: 0,
   photoUploadPromise: null,
+  pendingPhotoFile: null,
 };
 
 const LOGIN_USERS = {
@@ -1244,12 +1245,30 @@ function photoStatusElement() {
   return $("#photo-status");
 }
 
-function photoFileInput() {
-  return $("#photo-file");
+function photoFileInputs() {
+  return [$("#photo-camera-file"), $("#photo-gallery-file")].filter(Boolean);
+}
+
+function pendingPhotoFile() {
+  return state.pendingPhotoFile || photoFileInputs().find((input) => input.files?.[0])?.files?.[0] || null;
 }
 
 function hasPendingPhotoFile() {
-  return Boolean(photoFileInput()?.files?.[0]);
+  return Boolean(pendingPhotoFile());
+}
+
+function clearPhotoInputs() {
+  state.pendingPhotoFile = null;
+  photoFileInputs().forEach((input) => { input.value = ""; });
+}
+
+function handlePhotoInputChange(event) {
+  const changedInput = event.currentTarget;
+  state.pendingPhotoFile = changedInput?.files?.[0] || null;
+  photoFileInputs().forEach((input) => {
+    if (input !== changedInput) input.value = "";
+  });
+  updatePhotoStatusFromInput();
 }
 
 function setPhotoStatus(text, type = "") {
@@ -1329,8 +1348,7 @@ function renderPhotos() {
 }
 
 async function uploadPhoto(options = {}) {
-  const fileInput = photoFileInput();
-  const file = fileInput?.files?.[0];
+  const file = pendingPhotoFile();
   if (!file) {
     updatePhotoStatusFromInput();
     return setMessage($("#form-message"), "Выберите фото.", "error");
@@ -1368,7 +1386,7 @@ async function uploadPhoto(options = {}) {
   if (!savedPhoto) {
     throw new Error("Фото не найдено в measurement_photos после сохранения. Обновите страницу и повторите загрузку.");
   }
-  fileInput.value = "";
+  clearPhotoInputs();
   renderPhotos();
   renderChecks();
   setPhotoStatus("Фото сохранено.", "ok");
@@ -1495,7 +1513,7 @@ function bind() {
     }
     ensurePendingPhotoSaved("ручной загрузкой").catch((e) => setMessage($("#form-message"), e.message, "error"));
   });
-  $("#photo-file")?.addEventListener("change", updatePhotoStatusFromInput);
+  photoFileInputs().forEach((input) => input.addEventListener("change", handlePhotoInputChange));
   $("#photos-next-btn")?.addEventListener("click", () => requestActivateTab("check").catch((e) => setMessage($("#form-message"), e.message, "error")));
   $("#photos-list").addEventListener("click", (event) => {
     const id = event.target.closest("[data-delete-photo-id]")?.dataset.deletePhotoId;

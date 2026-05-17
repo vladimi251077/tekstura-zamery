@@ -300,12 +300,18 @@
                         <option>Другое</option>
                       </select>
                     </div>
-                    <div>
+                    <div class="photo-file-field">
                       <label>Фото</label>
-                      <input id="photo-file" type="file" accept="image/*" capture="environment" />
+                      <div class="photo-file-actions">
+                        <label class="btn secondary photo-file-btn" for="photo-camera-file">Сделать фото</label>
+                        <input id="photo-camera-file" class="sr-only" type="file" accept="image/*" capture="environment" />
+                        <label class="btn secondary photo-file-btn" for="photo-gallery-file">Выбрать из галереи</label>
+                        <input id="photo-gallery-file" class="sr-only" type="file" accept="image/*" />
+                      </div>
                     </div>
                     <button id="upload-photo-btn" type="button" class="btn secondary">Загрузить фото</button>
                   </div>
+                  <p class="photo-help">Можно сфотографировать сейчас или выбрать готовое фото из галереи. После выбора дождитесь статуса ‘Фото сохранено’.</p>
                   <p id="photo-status" class="photo-status" aria-live="polite">Фото не выбрано.</p>
                   <div id="photos-list" class="photos-list"></div>
                   <div class="tab-step-actions"><button id="photos-next-btn" type="button" class="btn primary">Следующий</button></div>

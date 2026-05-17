@@ -515,7 +515,7 @@ async function syncOfflineDraft(localId) {
     const measurementPayload = buildMeasurementPayloadFromOfflineDraft(draft, clientId);
     const { data: measurement, error: measurementError } = await supabaseClient
       .from("measurements")
-      .insert({ ...measurementPayload, number: makePermanentMeasurementNumber() })
+      .insert(measurementPayload)
       .select("*, clients(*)")
       .single();
     if (measurementError) throw new Error(`Ошибка создания замера: ${measurementError.message || measurementError}`);
@@ -523,7 +523,11 @@ async function syncOfflineDraft(localId) {
     await markOfflineDraftSynced(localId, measurement);
     await loadMeasurements();
     await selectMeasurement(measurement.id, { mode: "edit" });
-    setMessage($("#form-message"), `Черновик ${draft.temp_number || "TEMP"} отправлен. Создан замер ${measurement.number}.`, "ok");
+    if (measurement.number) {
+      setMessage($("#form-message"), `Черновик ${draft.temp_number || "TEMP"} отправлен. Создан замер ${measurement.number}.`, "ok");
+    } else {
+      setMessage($("#form-message"), `Черновик ${draft.temp_number || "TEMP"} отправлен, но Supabase не вернул номер замера.`, "warn");
+    }
     return measurement;
   } catch (error) {
     console.warn("Offline draft sync failed", { localId, clientId, error });
@@ -788,12 +792,8 @@ function toNumber(value) {
   return Number.isFinite(n) ? n : null;
 }
 
-function makePermanentMeasurementNumber() {
+function createMeasurementNumber() {
   return `KZN-ZM-${new Date().getFullYear()}-${Math.floor(Math.random() * 900000 + 100000)}`;
-}
-
-function makeNumber() {
-  return makePermanentMeasurementNumber();
 }
 
 const MEASUREMENT_MODE_DEFAULT = "simple";
@@ -1294,7 +1294,7 @@ function showNewMeasurementModePicker() {
 function newMeasurement(mode = MEASUREMENT_MODE_DEFAULT) {
   const normalizedMode = normalizeMeasurementMode(mode);
   state.selected = {
-    number: makeNumber(),
+    number: createMeasurementNumber(),
     status: "Черновик",
     clients: {},
     site_situation: "Пустой проём",

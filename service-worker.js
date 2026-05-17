@@ -5,7 +5,7 @@ const APP_SHELL_URLS = [
   "./",
   "./index.html",
   "./styles.css?v=20260517-offline-drafts",
-  "./app.js?v=20260517-v26",
+  "./app.js?v=20260517-v27",
   "./offline-db.js?v=20260517-v2",
   "./photo-preview.js?v=20260515-v14",
   "./details-enhance.js?v=20260515-v14",

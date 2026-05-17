@@ -6,6 +6,7 @@ const APP_SHELL_URLS = [
   "./styles.css?v=20260517-pwa-share",
   "./app.js?v=20260517-v26-offline-shell",
   "./offline-db.js?v=20260517-v1",
+  "./vendor/supabase-js.js?v=20260517-v1",
   "./drawing-bridge.js?v=20260517-v15",
   "./photo-preview.js?v=20260515-v14",
   "./details-enhance.js?v=20260515-v14",

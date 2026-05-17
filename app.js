@@ -442,6 +442,7 @@ async function markOfflineDraftSyncError(localId, error) {
 function buildMeasurementPayloadFromOfflineDraft(draft, clientId) {
   const formData = draft?.form_data || {};
   const measurement = { ...(formData.measurement || {}) };
+  delete measurement.number;
   const identity = currentUserIdentity();
   return {
     ...measurement,
@@ -514,7 +515,7 @@ async function syncOfflineDraft(localId) {
     const measurementPayload = buildMeasurementPayloadFromOfflineDraft(draft, clientId);
     const { data: measurement, error: measurementError } = await supabaseClient
       .from("measurements")
-      .insert({ ...measurementPayload, number: makeNumber() })
+      .insert({ ...measurementPayload, number: makePermanentMeasurementNumber() })
       .select("*, clients(*)")
       .single();
     if (measurementError) throw new Error(`Ошибка создания замера: ${measurementError.message || measurementError}`);
@@ -787,8 +788,12 @@ function toNumber(value) {
   return Number.isFinite(n) ? n : null;
 }
 
-function makeNumber() {
+function makePermanentMeasurementNumber() {
   return `KZN-ZM-${new Date().getFullYear()}-${Math.floor(Math.random() * 900000 + 100000)}`;
+}
+
+function makeNumber() {
+  return makePermanentMeasurementNumber();
 }
 
 const MEASUREMENT_MODE_DEFAULT = "simple";

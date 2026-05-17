@@ -140,6 +140,20 @@
     return withStore(STORES.offlinePhotos, "readwrite", (store) => store.delete(localPhotoId));
   }
 
+  function deleteOfflinePhotosByDraft(localDraftId) {
+    if (!localDraftId) return Promise.resolve(null);
+    return withStore(STORES.offlinePhotos, "readwrite", (store) => {
+      const request = store.index("local_draft_id").openCursor(localDraftId);
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor) return;
+        cursor.delete();
+        cursor.continue();
+      };
+      return request;
+    });
+  }
+
   async function countOfflinePhotosByDraft(localDraftId) {
     if (!localDraftId) return 0;
     return await withStore(STORES.offlinePhotos, "readonly", (store) => store.index("local_draft_id").count(localDraftId)) || 0;
@@ -162,7 +176,8 @@
     return (drafts || []).sort((a, b) => String(b.updated_at || "").localeCompare(String(a.updated_at || "")));
   }
 
-  function deleteOfflineDraft(localId) {
+  async function deleteOfflineDraft(localId) {
+    await deleteOfflinePhotosByDraft(localId);
     return withStore(STORES.offlineDrafts, "readwrite", (store) => store.delete(localId));
   }
 
@@ -177,6 +192,7 @@
     createOfflineDraft,
     deleteOfflineDraft,
     deleteOfflinePhoto,
+    deleteOfflinePhotosByDraft,
     get,
     getOfflineDraft,
     isSupported,

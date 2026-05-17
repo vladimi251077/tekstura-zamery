@@ -5,7 +5,7 @@ const SUPABASE_PROJECT_REF = new URL(SUPABASE_URL).hostname.split(".")[0];
 const SUPABASE_AUTH_STORAGE_KEY = `sb-${SUPABASE_PROJECT_REF}-auth-token`;
 const OFFLINE_STARTUP_MESSAGE = "Офлайн. Интернет недоступен. Можно создать локальный TEMP-черновик: данные и размеры сохранятся в этом телефоне.";
 const LOCAL_OFFLINE_DRAFT_MESSAGE = "Это локальный офлайн-черновик. Раздел для изготовителя будет доступен после синхронизации в Supabase.";
-const PHOTO_OFFLINE_DRAFT_MESSAGE = "Фото сохранены в телефоне. Они будут отправлены в Supabase после синхронизации.";
+const PHOTO_OFFLINE_DRAFT_MESSAGE = "Фото сохранены только в этом телефоне. Отправка фото в Supabase будет добавлена следующим этапом.";
 const PHOTO_DRAFT_SAVE_REQUIRED_MESSAGE = "Фото не загружено: сначала сохраните черновик.";
 const PHOTO_UPLOAD_OFFLINE_MESSAGE = "Фото нельзя загрузить без интернета. Для офлайн-черновика фото будут добавлены следующим этапом.";
 const OFFLINE_SYNC_UNAVAILABLE_MESSAGE = "Появится интернет — можно будет синхронизировать.";
@@ -392,7 +392,7 @@ async function openOfflineDraft(localId) {
 async function deleteLocalOfflineDraft(localId) {
   const draft = state.offlineDrafts.find((item) => item.local_id === localId);
   if (!draft) return;
-  if (!confirm(`Удалить локальный черновик ${draft.temp_number || "TEMP"} только с этого телефона?`)) return;
+  if (!confirm(`Удалить локальный черновик и все его фото только с этого телефона?`)) return;
   await window.TeksturaOfflineDB?.deleteOfflineDraft?.(localId);
   if (state.selected?.local_id === localId) {
     state.selected = null;

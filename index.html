@@ -5,13 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Tekstura Замеры</title>
     <meta name="robots" content="noindex,nofollow" />
-    <meta name="theme-color" content="#071a49" />
     <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#071a49" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Замеры" />
     <link rel="apple-touch-icon" href="./icon-192.png" />
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" />
-    <link rel="stylesheet" href="./styles.css?v=20260515-v14" />
+    <link rel="stylesheet" href="./styles.css?v=20260517-pwa-share" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   </head>
   <body>
@@ -36,6 +38,11 @@
         <section id="auth-view" class="auth-layout">
           <div class="card auth-card">
             <h2>Вход сотрудника</h2>
+            <div class="login-hint" aria-label="Подсказка для входа замерщика">
+              <b>Вход для замерщика:</b>
+              <span>логин: ruslan / rifat / vildan / vitalik</span>
+              <span>код выдаёт администратор</span>
+            </div>
             <p class="muted-text">Доступ только для замерщиков, конструктора, менеджера и администратора.</p>
             <label>Логин</label>
             <input id="email" type="text" placeholder="ruslan" autocomplete="username" />
@@ -44,8 +51,39 @@
             <p class="muted-text small">Введите короткий логин: ruslan, rifat, vildan, vitalik или полный email.</p>
             <button id="login-btn" class="btn primary full">Войти</button>
             <button id="signup-btn" class="btn secondary full hidden" aria-hidden="true" tabindex="-1">Создать пользователя в Supabase</button>
-            <p class="muted-text small">Доступ выдаёт администратор. Для работы используйте выданный логин и пароль.</p>
+            <p class="muted-text small">Доступ выдаёт администратор. Для работы используйте выданный логин и код.</p>
             <p id="auth-message" class="form-message"></p>
+          </div>
+
+          <div class="auth-side-stack">
+            <div class="card auth-info-card">
+              <h2>Установить на телефон</h2>
+              <div class="install-steps">
+                <div>
+                  <b>iPhone</b>
+                  <span>Safari → Поделиться → На экран «Домой»</span>
+                </div>
+                <div>
+                  <b>Android</b>
+                  <span>Chrome → ⋮ → Добавить на главный экран</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="card auth-info-card share-card">
+              <h2>Поделиться с замерщиком</h2>
+              <p class="muted-text small">Выберите логин, скопируйте текст и отправьте его в WhatsApp или Telegram.</p>
+              <label for="share-login">Логин замерщика</label>
+              <select id="share-login">
+                <option value="ruslan">ruslan</option>
+                <option value="rifat">rifat</option>
+                <option value="vildan">vildan</option>
+                <option value="vitalik">vitalik</option>
+              </select>
+              <button id="copy-share-btn" class="btn secondary full" type="button">Скопировать</button>
+              <p id="share-message" class="form-message" aria-live="polite"></p>
+              <textarea id="share-fallback" class="share-fallback hidden" readonly aria-label="Текст приглашения для ручного копирования"></textarea>
+            </div>
           </div>
         </section>
 

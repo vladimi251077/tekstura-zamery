@@ -1,8 +1,7 @@
 {
   "name": "Tekstura Замеры",
-  "short_name": "Tekstura",
-  "description": "Замеры лестниц Tekstura",
-  "start_url": "./index.html",
+  "short_name": "Замеры",
+  "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "background_color": "#f3f6fb",

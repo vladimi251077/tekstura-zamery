@@ -442,10 +442,10 @@ async function markOfflineDraftSyncError(localId, error) {
 function buildMeasurementPayloadFromOfflineDraft(draft, clientId) {
   const formData = draft?.form_data || {};
   const measurement = { ...(formData.measurement || {}) };
-  delete measurement.number;
   const identity = currentUserIdentity();
   return {
     ...measurement,
+    number: createMeasurementNumber(),
     status: measurement.status === "Офлайн-черновик" ? "Черновик" : (measurement.status || "Черновик"),
     client_id: clientId,
     created_by: measurement.created_by || state.user?.id,

@@ -5,6 +5,38 @@ const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
 
+const OFFLINE_SHELL_NOTE = "Офлайн-оболочка доступна. Полноценный запуск без интернета возможен только если Supabase CDN уже был загружен этим браузером раньше.";
+
+function updateNetworkIndicator() {
+  const indicator = $("#offline-status");
+  if (!indicator) return;
+  const isOnline = navigator.onLine;
+  indicator.textContent = isOnline ? "Онлайн" : "Офлайн";
+  indicator.classList.toggle("offline", !isOnline);
+  indicator.title = isOnline ? "Соединение с сетью есть" : OFFLINE_SHELL_NOTE;
+  indicator.setAttribute("aria-label", isOnline ? "Приложение онлайн" : OFFLINE_SHELL_NOTE);
+}
+
+function rememberNetworkState() {
+  window.TeksturaOfflineDB?.set("network", { online: navigator.onLine, checkedAt: new Date().toISOString() })
+    .catch((error) => console.warn("Offline metadata was not saved", error));
+}
+
+function bindNetworkIndicator() {
+  updateNetworkIndicator();
+  rememberNetworkState();
+  window.addEventListener("online", () => { updateNetworkIndicator(); rememberNetworkState(); });
+  window.addEventListener("offline", () => { updateNetworkIndicator(); rememberNetworkState(); });
+}
+
+function registerServiceWorker() {
+  if (!("serviceWorker" in navigator) || !window.isSecureContext) return;
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./service-worker.js")
+      .catch((error) => console.warn("Service worker was not registered", error));
+  });
+}
+
 const state = {
   user: null,
   profile: null,
@@ -1579,5 +1611,7 @@ function bind() {
   $$(".tab").forEach((tab) => tab.addEventListener("click", () => requestActivateTab(tab.dataset.tab).catch((e) => setMessage($("#form-message"), e.message, "error"))));
 }
 
+bindNetworkIndicator();
+registerServiceWorker();
 bind();
 init().catch((e) => { console.error(e); setMessage($("#auth-message"), e.message, "error"); });

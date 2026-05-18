@@ -120,6 +120,11 @@
       size_bytes: Number(photo.size_bytes || photo.blob?.size || 0),
       photo_type: photo.photo_type || "Другое",
       sync_status: photo.sync_status || "local_only",
+      server_photo_id: photo.server_photo_id || null,
+      server_file_path: photo.server_file_path || "",
+      synced_at: photo.synced_at || "",
+      sync_error: photo.sync_error || photo.last_sync_error || "",
+      last_sync_error: photo.last_sync_error || photo.sync_error || "",
       created_at: photo.created_at || now,
       updated_at: photo.updated_at || now,
       ...photo,
@@ -127,6 +132,10 @@
   }
 
   function addOfflinePhoto(photo) {
+    return withStore(STORES.offlinePhotos, "readwrite", (store) => store.put(normalizeOfflinePhoto(photo)));
+  }
+
+  function putOfflinePhoto(photo) {
     return withStore(STORES.offlinePhotos, "readwrite", (store) => store.put(normalizeOfflinePhoto(photo)));
   }
 
@@ -199,6 +208,7 @@
     listOfflineDrafts,
     listOfflinePhotosByDraft,
     putOfflineDraft,
+    putOfflinePhoto,
     remove,
     set,
   };

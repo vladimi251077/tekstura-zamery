@@ -10,6 +10,7 @@ const PHOTO_DRAFT_SAVE_REQUIRED_MESSAGE = "Фото не загружено: с�
 const PHOTO_UPLOAD_OFFLINE_MESSAGE = "Фото нельзя загрузить без интернета. В TEMP-черновике фото сохраняются в телефоне и отправятся при синхронизации.";
 const OFFLINE_SYNC_UNAVAILABLE_MESSAGE = "Появится интернет — можно будет синхронизировать.";
 const OFFLINE_SYNC_ERROR_MESSAGE = "Не удалось синхронизировать. Черновик сохранён в телефоне, попробуйте ещё раз.";
+const PERMANENT_DELETE_PASSWORD = "del2525";
 const supabaseClient = window.supabase?.createClient ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
@@ -1227,7 +1228,11 @@ function canArchiveMeasurements() {
 }
 
 function canDeleteMeasurements() {
-  return roleMatches("admin");
+  return roleMatches("admin", "manager");
+}
+
+function isTrashMeasurement(measurement = state.selected) {
+  return Boolean(measurement?.is_deleted);
 }
 
 function canUseTechnicalExports() {
@@ -1268,14 +1273,19 @@ function applyRoleUI() {
   const acceptBtn = $("#accept-btn");
   const archiveBtn = $("#archive-btn");
   const deleteBtn = $("#soft-delete-btn");
+  const restoreBtn = $("#restore-measurement-btn");
+  const permanentDeleteBtn = $("#permanent-delete-btn");
   const jsonBtn = $("#download-json-btn");
   const csvBtn = $("#download-csv-btn");
   const technicalActions = $("#technical-actions");
   const productionLink = $("#production-link");
+  const selectedInTrash = isTrashMeasurement();
   const canUseTechnicalActions = canUseTechnicalExports() || canArchiveMeasurements() || canDeleteMeasurements();
-  acceptBtn?.classList.toggle("hidden", !canAcceptMeasurements());
-  archiveBtn?.classList.toggle("hidden", !canArchiveMeasurements());
-  deleteBtn?.classList.toggle("hidden", !canDeleteMeasurements());
+  acceptBtn?.classList.toggle("hidden", selectedInTrash || !canAcceptMeasurements());
+  archiveBtn?.classList.toggle("hidden", selectedInTrash || !canArchiveMeasurements());
+  deleteBtn?.classList.toggle("hidden", selectedInTrash || !canDeleteMeasurements());
+  restoreBtn?.classList.toggle("hidden", !selectedInTrash || !canDeleteMeasurements());
+  permanentDeleteBtn?.classList.toggle("hidden", !selectedInTrash || !canDeleteMeasurements());
   jsonBtn?.classList.toggle("hidden", !canUseTechnicalExports());
   csvBtn?.classList.toggle("hidden", !canUseTechnicalExports());
   technicalActions?.classList.toggle("hidden", !canUseTechnicalActions);
@@ -1481,6 +1491,7 @@ function filteredMeasurements() {
   const filter = $("#status-filter")?.value || "active";
   const query = String($("#measurement-search")?.value || "").trim().toLowerCase();
   const byStatus = (measurement) => {
+    if (filter === "trash") return measurement.is_deleted === true;
     if (measurement.is_deleted) return false;
     if (filter === "all") return true;
     if (filter === "active") return !measurement.is_archived && measurement.status !== "Архив";
@@ -1503,10 +1514,11 @@ function filteredMeasurements() {
 }
 
 function renderStats() {
-  $("#stat-drafts").textContent = state.measurements.filter((m) => m.status === "Черновик").length;
-  $("#stat-review").textContent = state.measurements.filter((m) => m.status === "На проверке").length;
-  $("#stat-ready").textContent = state.measurements.filter((m) => m.status === "Готовый замер").length;
-  $("#stat-archive").textContent = state.measurements.filter((m) => m.status === "Архив" || m.is_archived).length;
+  const visible = state.measurements.filter((m) => !m.is_deleted);
+  $("#stat-drafts").textContent = visible.filter((m) => m.status === "Черновик").length;
+  $("#stat-review").textContent = visible.filter((m) => m.status === "На проверке").length;
+  $("#stat-ready").textContent = visible.filter((m) => m.status === "Готовый замер").length;
+  $("#stat-archive").textContent = visible.filter((m) => m.status === "Архив" || m.is_archived).length;
 }
 
 function renderList() {
@@ -1518,7 +1530,7 @@ function renderList() {
     const active = state.selected?.id === m.id ? "active" : "";
     const modeLabel = MEASUREMENT_MODE_LABELS[modeFromDrawingProject(m.drawing_project_json)];
     const measurerChip = measurementMeasurerName(m) ? `<span class="small-chip">Замерщик: ${escapeHtml(measurementMeasurerName(m))}</span>` : "";
-    return `<button class="measurement-item ${active}" data-id="${escapeHtml(m.id)}"><div class="number">${escapeHtml(m.number)}</div><div>${escapeHtml(c.name || "Клиент не указан")}</div><div class="address">${escapeHtml(c.address || "Адрес не указан")}</div><div class="measurement-meta"><span class="small-chip">${escapeHtml(m.status)}</span><span class="small-chip">${escapeHtml(m.site_situation)}</span><span class="small-chip">${escapeHtml(m.opening_type)}</span><span class="small-chip mode-chip">${escapeHtml(modeLabel)}</span>${measurerChip}</div></button>`;
+    return `<button class="measurement-item ${active}" data-id="${escapeHtml(m.id)}"><div class="number">${escapeHtml(m.number)}</div><div>${escapeHtml(c.name || "Клиент не указан")}</div><div class="address">${escapeHtml(c.address || "Адрес не указан")}</div><div class="measurement-meta">${m.is_deleted ? `<span class="small-chip danger-chip">Корзина</span>` : ""}<span class="small-chip">${escapeHtml(m.status)}</span><span class="small-chip">${escapeHtml(m.site_situation)}</span><span class="small-chip">${escapeHtml(m.opening_type)}</span><span class="small-chip mode-chip">${escapeHtml(modeLabel)}</span>${measurerChip}</div></button>`;
   }).join("");
   $$(".measurement-item").forEach((btn) => btn.addEventListener("click", () => selectMeasurement(btn.dataset.id)));
 }
@@ -1868,6 +1880,159 @@ async function setStatus(status, extra = {}, options = {}) {
   await selectMeasurement(data.id, { mode: "edit" });
 }
 
+
+function resetSelectedMeasurement(message = "") {
+  state.selected = null;
+  state.photos = [];
+  state.photoScopeId = null;
+  state.hiddenForeignPhotos = 0;
+  renderStats();
+  renderList();
+  showWorkspacePanel("empty");
+  if (message) {
+    setMessage($("#form-message"), message, "ok");
+    alert(message);
+  }
+}
+
+function replaceMeasurementInState(measurement) {
+  if (!measurement?.id) return;
+  const index = state.measurements.findIndex((item) => item.id === measurement.id);
+  if (index >= 0) state.measurements[index] = measurement;
+  else state.measurements.unshift(measurement);
+}
+
+function requireOnlineSupabaseAction() {
+  if (!supabaseClient || !navigator.onLine) {
+    showOfflineState();
+    return false;
+  }
+  return true;
+}
+
+async function moveSelectedMeasurementToTrash() {
+  if (isLocalOfflineDraft()) {
+    setMessage($("#form-message"), offlineDraftMessage(), "error");
+    return;
+  }
+  if (!canDeleteMeasurements()) {
+    setMessage($("#form-message"), "Удаление доступно только администратору/менеджеру.", "error");
+    return;
+  }
+  if (!state.selected?.id) return;
+  const measurementNumber = state.selected.number || "замер";
+  if (!confirm(`Переместить замер ${measurementNumber} в корзину? Его можно будет восстановить.`)) return;
+  if (!requireOnlineSupabaseAction()) return;
+
+  const { data, error } = await supabaseClient
+    .from("measurements")
+    .update({ is_deleted: true, deleted_at: new Date().toISOString(), deleted_by: state.user?.id || null, updated_at: new Date().toISOString() })
+    .eq("id", state.selected.id)
+    .select("*, clients(*)")
+    .single();
+  if (error) throw error;
+  replaceMeasurementInState(data);
+  resetSelectedMeasurement("Замер перемещён в корзину.");
+}
+
+async function restoreSelectedMeasurementFromTrash() {
+  if (isLocalOfflineDraft()) {
+    setMessage($("#form-message"), offlineDraftMessage(), "error");
+    return;
+  }
+  if (!canDeleteMeasurements()) {
+    setMessage($("#form-message"), "Восстановление доступно только администратору/менеджеру.", "error");
+    return;
+  }
+  if (!state.selected?.id) return;
+  if (!requireOnlineSupabaseAction()) return;
+
+  const { data, error } = await supabaseClient
+    .from("measurements")
+    .update({ is_deleted: false, deleted_at: null, deleted_by: null, updated_at: new Date().toISOString() })
+    .eq("id", state.selected.id)
+    .select("*, clients(*)")
+    .single();
+  if (error) throw error;
+  replaceMeasurementInState(data);
+  await loadMeasurements();
+  await selectMeasurement(data.id);
+  setMessage($("#form-message"), "Замер восстановлен.", "ok");
+  alert("Замер восстановлен.");
+}
+
+function isMissingStorageObjectError(error) {
+  const text = String(error?.message || error?.error || error || "").toLowerCase();
+  const status = Number(error?.statusCode || error?.status || 0);
+  return status === 404 || text.includes("not found") || text.includes("does not exist") || text.includes("not exist") || text.includes("missing");
+}
+
+async function removeMeasurementStorageFiles(filePaths) {
+  const uniquePaths = Array.from(new Set((filePaths || []).map((path) => String(path || "").trim()).filter(Boolean)));
+  if (!uniquePaths.length) return;
+  const { error } = await supabaseClient.storage.from("measurement-photos").remove(uniquePaths);
+  if (error && !isMissingStorageObjectError(error)) throw new Error(`Ошибка удаления файлов Storage: ${error.message || error}`);
+  if (error) console.warn("Some measurement photo files were already absent in Storage", error);
+}
+
+async function deleteClientIfMeasurementWasLast(clientId) {
+  if (!clientId) return;
+  const { data, error } = await supabaseClient
+    .from("measurements")
+    .select("id")
+    .eq("client_id", clientId)
+    .limit(1);
+  if (error) throw new Error(`Ошибка проверки замеров клиента: ${error.message || error}`);
+  if (data?.length) return;
+  const { error: clientError } = await supabaseClient.from("clients").delete().eq("id", clientId);
+  if (clientError) throw new Error(`Ошибка удаления клиента: ${clientError.message || clientError}`);
+}
+
+async function permanentDeleteSelectedMeasurement() {
+  if (isLocalOfflineDraft()) {
+    setMessage($("#form-message"), offlineDraftMessage(), "error");
+    return;
+  }
+  if (!canDeleteMeasurements()) {
+    setMessage($("#form-message"), "Полное удаление доступно только администратору/менеджеру.", "error");
+    return;
+  }
+  if (!state.selected?.id) return;
+  const measurement = state.selected;
+  const password = prompt("Введите пароль для полного удаления из Supabase");
+  if (password !== PERMANENT_DELETE_PASSWORD) {
+    setMessage($("#form-message"), "Неверный пароль. Удаление отменено.", "error");
+    alert("Неверный пароль. Удаление отменено.");
+    return;
+  }
+  if (!confirm(`Удалить замер ${measurement.number || "замер"} навсегда из Supabase? Будут удалены замер, фото и файлы Storage. Это действие нельзя отменить.`)) return;
+  if (!requireOnlineSupabaseAction()) return;
+
+  const { data: photos, error: photosError } = await supabaseClient
+    .from("measurement_photos")
+    .select("file_path")
+    .eq("measurement_id", measurement.id);
+  if (photosError) throw new Error(`Ошибка поиска фото замера: ${photosError.message || photosError}`);
+
+  await removeMeasurementStorageFiles((photos || []).map((photo) => photo.file_path));
+
+  const { error: photoRowsError } = await supabaseClient
+    .from("measurement_photos")
+    .delete()
+    .eq("measurement_id", measurement.id);
+  if (photoRowsError) throw new Error(`Ошибка удаления строк фото: ${photoRowsError.message || photoRowsError}`);
+
+  const { error: measurementError } = await supabaseClient
+    .from("measurements")
+    .delete()
+    .eq("id", measurement.id);
+  if (measurementError) throw new Error(`Ошибка удаления замера: ${measurementError.message || measurementError}`);
+
+  await deleteClientIfMeasurementWasLast(measurement.client_id);
+  state.measurements = state.measurements.filter((item) => item.id !== measurement.id);
+  resetSelectedMeasurement("Замер полностью удалён из Supabase.");
+}
+
 async function loadPhotos(measurementId) {
   if (isLocalOfflineDraft()) {
     state.photos = await listLocalOfflinePhotos(state.selected.local_id);
@@ -2184,7 +2349,9 @@ function renderPreview() {
   const c = m.clients || {};
   const project = safeJsonValue(m.drawing_project_json);
   const productionHref = productionUrl(m);
-  const canEdit = canEditMeasurements();
+  const inTrash = isTrashMeasurement(m);
+  const canEdit = canEditMeasurements() && !inTrash;
+  const canDelete = canDeleteMeasurements();
   box.innerHTML = `
     <div class="preview-head">
       <div>
@@ -2195,6 +2362,8 @@ function renderPreview() {
       <div class="preview-actions">
         <button type="button" class="btn secondary" data-open-measurements>Назад</button>
         ${canEdit ? `<button type="button" class="btn primary" data-edit-measurement>Редактировать</button>` : ""}
+        ${!inTrash && canDelete ? `<button type="button" class="btn danger" data-trash-measurement>Удалить</button>` : ""}
+        ${inTrash && canDelete ? `<button type="button" class="btn secondary" data-restore-measurement>Восстановить</button><button type="button" class="btn danger" data-permanent-delete-measurement>Удалить навсегда</button>` : ""}
         <button type="button" class="btn ghost" data-print-preview>Печать</button>
         <a class="btn secondary" href="${productionHref}" target="_blank" rel="noopener">Для изготовителя</a>
       </div>
@@ -2780,6 +2949,9 @@ function bind() {
   $("#measurement-preview").addEventListener("click", (event) => {
     if (event.target.closest("[data-open-measurements]")) openMeasurementsScreen();
     if (event.target.closest("[data-edit-measurement]")) editSelectedMeasurement();
+    if (event.target.closest("[data-trash-measurement]")) moveSelectedMeasurementToTrash().catch((e) => setMessage($("#form-message"), `Не удалось удалить замер: ${userFacingError(e)}`, "error"));
+    if (event.target.closest("[data-restore-measurement]")) restoreSelectedMeasurementFromTrash().catch((e) => setMessage($("#form-message"), `Не удалось восстановить замер: ${userFacingError(e)}`, "error"));
+    if (event.target.closest("[data-permanent-delete-measurement]")) permanentDeleteSelectedMeasurement().catch((e) => setMessage($("#form-message"), `Не удалось удалить замер: ${userFacingError(e)}`, "error"));
     if (event.target.closest("[data-print-preview]")) window.print();
   });
   $("#measurement-form").addEventListener("submit", (event) => { event.preventDefault(); saveMeasurement().catch((e) => setMessage($("#form-message"), userFacingError(e), "error")); });
@@ -2823,10 +2995,13 @@ function bind() {
     setStatus("Архив", { is_archived: true, archived_at: new Date().toISOString(), archived_by: state.user.id }).catch((e) => setMessage($("#form-message"), userFacingError(e), "error"));
   });
   $("#soft-delete-btn").addEventListener("click", () => {
-    if (isLocalOfflineDraft()) { setMessage($("#form-message"), offlineDraftMessage(), "error"); return; }
-    if (!canDeleteMeasurements()) { setMessage($("#form-message"), "Удаление доступно только администратору.", "error"); return; }
-    if (!confirm("Пометить этот замер как удалённый?")) return;
-    setStatus("Удалён", { is_deleted: true, deleted_at: new Date().toISOString(), deleted_by: state.user.id }).catch((e) => setMessage($("#form-message"), userFacingError(e), "error"));
+    moveSelectedMeasurementToTrash().catch((e) => setMessage($("#form-message"), `Не удалось удалить замер: ${userFacingError(e)}`, "error"));
+  });
+  $("#restore-measurement-btn")?.addEventListener("click", () => {
+    restoreSelectedMeasurementFromTrash().catch((e) => setMessage($("#form-message"), `Не удалось восстановить замер: ${userFacingError(e)}`, "error"));
+  });
+  $("#permanent-delete-btn")?.addEventListener("click", () => {
+    permanentDeleteSelectedMeasurement().catch((e) => setMessage($("#form-message"), `Не удалось удалить замер: ${userFacingError(e)}`, "error"));
   });
   $("#download-json-btn").addEventListener("click", downloadJson);
   $("#download-csv-btn").addEventListener("click", downloadCsv);

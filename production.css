@@ -241,15 +241,47 @@
   min-width: 0;
 }
 
+.production-photo-media {
+  aspect-ratio: 4 / 3;
+  display: grid;
+  place-items: stretch;
+  background: #e5e7eb;
+  min-width: 0;
+}
+
 .production-photo img {
   width: 100%;
-  aspect-ratio: 4 / 3;
+  height: 100%;
   object-fit: cover;
   display: block;
   background: #e5e7eb;
 }
 
-.production-photo div {
+.production-photo-fallback {
+  display: grid;
+  align-content: center;
+  gap: 6px;
+  min-height: 100%;
+  padding: 12px;
+  background: #f1f5f9;
+  color: #475569;
+  font-size: 13px;
+  line-height: 1.35;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.production-photo-fallback strong {
+  color: #0f172a;
+}
+
+.production-photo-fallback small,
+.production-photo-caption small {
+  color: #64748b;
+  overflow-wrap: anywhere;
+}
+
+.production-photo-caption {
   padding: 10px;
   font-size: 13px;
   color: #334155;

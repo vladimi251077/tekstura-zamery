@@ -208,12 +208,25 @@ async function loadPhotos(measurement) {
   state.photos = await Promise.all(filtered.map(async (photo) => ({ ...photo, url: await signedPhotoUrl(photo.file_path) })));
 }
 
+function normalizePhotoStoragePath(path) {
+  const normalized = String(path || "").trim().replace(/^\/+/, "");
+  return normalized.startsWith("measurement-photos/") ? normalized.slice("measurement-photos/".length) : normalized;
+}
+
 async function signedPhotoUrl(path) {
-  if (!path) return "";
-  const { data, error } = await supabaseClient.storage.from("measurement-photos").createSignedUrl(path, 60 * 60);
-  if (!error && data?.signedUrl) return data.signedUrl;
-  const publicData = supabaseClient.storage.from("measurement-photos").getPublicUrl(path);
-  return publicData?.data?.publicUrl || "";
+  const filePath = normalizePhotoStoragePath(path);
+  if (!filePath) return "";
+  try {
+    const { data, error } = await supabaseClient.storage.from("measurement-photos").createSignedUrl(filePath, 60 * 60);
+    if (error) {
+      console.warn("Не удалось создать signed URL для фото", { filePath, error });
+      return "";
+    }
+    return data?.signedUrl || "";
+  } catch (error) {
+    console.warn("Не удалось создать signed URL для фото", { filePath, error });
+    return "";
+  }
 }
 
 function kv(label, value) {
@@ -306,13 +319,85 @@ function renderProductionStepCountNode(doc, box, item) {
   return group;
 }
 
+const PRODUCTION_SVG_STYLE_ID = "production-svg-safe-style";
+const PRODUCTION_SVG_STYLE = `
+  .flight,.landing,.platform,.turn,.step,.opening,.zone{fill:#f8fafc;stroke:#0f172a;stroke-width:2;vector-effect:non-scaling-stroke;}
+  .turn,.landing,.platform,.zone.turn{fill:#eef6ff;}
+  .step,.tread,.step-line{fill:none;stroke:#1e293b;stroke-width:1.4;vector-effect:non-scaling-stroke;}
+  .opening,.outline{fill:#fff;stroke:#0f172a;stroke-width:2.2;vector-effect:non-scaling-stroke;}
+  .wall,.wall-line,.wall-mark{fill:none;stroke:#94a3b8;stroke-width:9;stroke-linecap:round;vector-effect:non-scaling-stroke;}
+  .dimension line,.dimension path,.dim,.route{fill:none;stroke:#0f172a;stroke-width:1.8;vector-effect:non-scaling-stroke;}
+  .dimension text,.label,.caption{font:800 15px system-ui,sans-serif;fill:#0f172a;paint-order:stroke;stroke:#fff;stroke-width:4px;stroke-linejoin:round;}
+  .zone-hit,.dim-hit,.wall-hit,.window-hit,.ascent-hit{fill:transparent!important;stroke:transparent!important;display:none!important;}
+  .winder-step{fill:#eef6ff;stroke:#1e293b;stroke-width:1.4;vector-effect:non-scaling-stroke;}
+  .winder-envelope{fill:#e0f2fe;stroke:#0f172a;stroke-width:2;vector-effect:non-scaling-stroke;}
+  .window-mark{fill:#e0f2fe;stroke:#0284c7;stroke-width:3;vector-effect:non-scaling-stroke;}
+  .obstacle-mark{fill:#fff7ed;stroke:#ea580c;stroke-width:3;vector-effect:non-scaling-stroke;}
+  .flight-step-count-bg{fill:#fff;stroke:#cbd5e1;stroke-width:1.2;opacity:.92;vector-effect:non-scaling-stroke;}
+  .flight-step-count-text{font:950 13px system-ui,sans-serif;fill:#0f172a;paint-order:stroke;stroke:#fff;stroke-width:3px;stroke-linejoin:round;}
+`;
+
+function svgClassList(node) {
+  return String(node.getAttribute("class") || "").split(/\s+/).filter(Boolean);
+}
+
+function svgHasAnyClass(node, classes) {
+  const nodeClasses = svgClassList(node);
+  return classes.some((name) => nodeClasses.includes(name));
+}
+
+function svgHasPaint(node) {
+  return node.hasAttribute("fill") || node.hasAttribute("stroke") || node.hasAttribute("style");
+}
+
+function ensureProductionSvgStyle(parsed, svg) {
+  const existing = svg.querySelector(`style#${PRODUCTION_SVG_STYLE_ID}`);
+  if (existing) {
+    existing.textContent = PRODUCTION_SVG_STYLE;
+    return;
+  }
+  const style = parsed.createElementNS("http://www.w3.org/2000/svg", "style");
+  style.setAttribute("id", PRODUCTION_SVG_STYLE_ID);
+  style.textContent = PRODUCTION_SVG_STYLE;
+  const first = svg.firstChild;
+  if (first) svg.insertBefore(style, first);
+  else svg.appendChild(style);
+}
+
+function hardenProductionSvgPaint(svg) {
+  svg.querySelectorAll("rect.zone-hit, polygon.zone-hit, path.zone-hit, .zone-hit, .dim-hit, .wall-hit, .window-hit, .ascent-hit").forEach((node) => {
+    node.setAttribute("fill", "transparent");
+    node.setAttribute("stroke", "transparent");
+    node.setAttribute("display", "none");
+  });
+
+  svg.querySelectorAll("rect, polygon, path").forEach((node) => {
+    if (svgHasAnyClass(node, ["zone-hit", "dim-hit", "wall-hit", "window-hit", "ascent-hit"])) return;
+    if (svgHasPaint(node)) return;
+    const tag = node.nodeName.toLowerCase();
+    if (svgHasAnyClass(node, ["step", "tread", "step-line", "dimension", "dim", "route", "wall", "wall-line", "wall-mark"])) {
+      node.setAttribute("fill", "none");
+      node.setAttribute("stroke", "#1e293b");
+      return;
+    }
+    if (tag === "path") {
+      node.setAttribute("fill", "#f8fafc");
+      node.setAttribute("stroke", "#0f172a");
+      return;
+    }
+    node.setAttribute("fill", svgHasAnyClass(node, ["turn", "landing", "platform"]) ? "#eef6ff" : "#f8fafc");
+    node.setAttribute("stroke", "#0f172a");
+  });
+}
+
 function enhanceProductionSvg(svgText, measurement, project) {
   if (!svgText || typeof DOMParser === "undefined") return svgText || "";
   const labels = productionStepCountLabels(measurement, project);
-  if (!labels.length) return svgText;
   const parsed = new DOMParser().parseFromString(svgText, "image/svg+xml");
   const svg = parsed.documentElement;
   if (!svg || svg.nodeName.toLowerCase() !== "svg") return svgText;
+  ensureProductionSvgStyle(parsed, svg);
+  hardenProductionSvgPaint(svg);
   svg.querySelectorAll(".flight-step-count").forEach((node) => node.remove());
   labels.forEach((item) => {
     const rect = svg.querySelector(`rect[data-zone="${item.flightId}"]:not(.zone-hit)`);
@@ -562,14 +647,45 @@ function renderMarks(project) {
   return blocks.length ? `<div class="production-grid">${blocks.join("")}</div>` : `<p class="production-empty-line">Метки объекта не заполнены.</p>`;
 }
 
-function renderPhotos() {
-  if (!state.photos.length) return `<p class="production-empty-line">Фото для этого замера не загружены.</p>`;
-  return `<div class="production-photo-grid">${state.photos.map((p) => `<a class="production-photo" href="${escapeHtml(p.url)}" target="_blank" rel="noopener">
-    ${p.url ? `<img src="${escapeHtml(p.url)}" alt="${escapeHtml(p.photo_type || "Фото")}">` : `<div style="aspect-ratio:4/3;display:grid;place-items:center;">Фото</div>`}
-    <div><b>${escapeHtml(p.photo_type || "Фото")}</b><br><small>${escapeHtml(p.file_path || "")}</small></div>
-  </a>`).join("")}</div>`;
+function renderPhotoFallback(message, filePath, hidden = false) {
+  return `<div class="production-photo-fallback ${hidden ? "hidden" : ""}">
+    <strong>${escapeHtml(message)}</strong>
+    ${filePath ? `<small>${escapeHtml(filePath)}</small>` : ""}
+  </div>`;
 }
 
+function renderPhotos() {
+  if (!state.photos.length) return `<p class="production-empty-line">Фото для этого замера не загружены.</p>`;
+  return `<div class="production-photo-grid">${state.photos.map((p) => {
+    const filePath = p.file_path || "";
+    const title = p.photo_type || "Фото";
+    const media = p.url
+      ? `<div class="production-photo-media" data-file-path="${escapeHtml(filePath)}">
+          <img src="${escapeHtml(p.url)}" alt="${escapeHtml(title)}">
+          ${renderPhotoFallback("Файл не открылся", filePath, true)}
+        </div>`
+      : `<div class="production-photo-media is-error" data-file-path="${escapeHtml(filePath)}">
+          ${renderPhotoFallback("Фото есть в базе, но файл недоступен в Storage. Проверьте доступ bucket measurement-photos.", filePath)}
+        </div>`;
+    const caption = `<div class="production-photo-caption"><b>${escapeHtml(title)}</b><br><small>${escapeHtml(filePath)}</small></div>`;
+    return p.url
+      ? `<a class="production-photo" href="${escapeHtml(p.url)}" target="_blank" rel="noopener">${media}${caption}</a>`
+      : `<div class="production-photo">${media}${caption}</div>`;
+  }).join("")}</div>`;
+}
+
+function bindProductionPhotoFallbacks() {
+  $$(".production-photo img").forEach((img) => {
+    img.onerror = () => {
+      const media = img.closest(".production-photo-media");
+      if (!media) return;
+      media.classList.add("is-error");
+      img.removeAttribute("src");
+      img.classList.add("hidden");
+      media.querySelector(".production-photo-fallback")?.classList.remove("hidden");
+    };
+  });
+}
 
 function renderProductionStatusControl(measurement) {
   if (!canChangeProductionStatus()) return "";
@@ -644,6 +760,7 @@ function renderCard() {
     ${section("Фото объекта", renderPhotos())}
     ${section("Комментарии", `<div class="production-note">${escapeHtml(m.general_comment || m.obstacles_comment || "Комментариев нет.")}</div>`)}
   `;
+  bindProductionPhotoFallbacks();
   $("#back-prod-btn")?.addEventListener("click", () => {
     if (history.length > 1) history.back();
     else location.href = "./index.html";

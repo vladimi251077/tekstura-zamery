@@ -4,7 +4,7 @@ const APP_SHELL_CACHE = `${CACHE_VERSION}-app-shell`;
 const APP_SHELL_URLS = [
   "./",
   "./index.html",
-  "./styles.css?v=20260518-photo-render",
+  "./styles.css?v=20260518-trash-bulk",
   "./app.js?v=20260518-v37",
   "./offline-db.js?v=20260517-v4",
   "./photo-preview.js?v=20260515-v14",

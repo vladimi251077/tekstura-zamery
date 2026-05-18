@@ -71,6 +71,7 @@ const state = {
   offlineAutosaveTimer: null,
   offlineAutosaveInFlight: null,
   offlineSyncInFlight: new Set(),
+  selectedTrashIds: new Set(),
 };
 
 
@@ -1517,6 +1518,78 @@ function filteredMeasurements() {
   return state.measurements.filter((measurement) => byStatus(measurement) && byQuery(measurement));
 }
 
+function isTrashFilterActive() {
+  return ($("#status-filter")?.value || "active") === "trash";
+}
+
+function visibleTrashMeasurements() {
+  return isTrashFilterActive() ? filteredMeasurements().filter((measurement) => measurement.is_deleted === true && measurement.id) : [];
+}
+
+function selectedTrashMeasurements() {
+  const selectedIds = state.selectedTrashIds || new Set();
+  return state.measurements.filter((measurement) => measurement.is_deleted === true && selectedIds.has(String(measurement.id)));
+}
+
+function allTrashMeasurements() {
+  return state.measurements.filter((measurement) => measurement.is_deleted === true && measurement.id && !measurement.local_id);
+}
+
+function setTrashActionsMessage(message, type = "") {
+  const target = $("#trash-actions-message") || $("#form-message");
+  setMessage(target, message, type);
+}
+
+function syncSelectedTrashIdsWithState() {
+  if (!state.selectedTrashIds) state.selectedTrashIds = new Set();
+  const validIds = new Set(state.measurements.filter((measurement) => measurement.is_deleted === true).map((measurement) => String(measurement.id)));
+  state.selectedTrashIds = new Set(Array.from(state.selectedTrashIds).filter((id) => validIds.has(String(id))));
+}
+
+function renderTrashActions(items) {
+  const panel = $("#trash-bulk-actions");
+  if (!panel) return;
+  if (!isTrashFilterActive()) {
+    panel.classList.add("hidden");
+    panel.setAttribute("aria-hidden", "true");
+    state.selectedTrashIds?.clear();
+    setTrashActionsMessage("");
+    return;
+  }
+  syncSelectedTrashIdsWithState();
+  const visibleIds = new Set((items || []).map((measurement) => String(measurement.id)));
+  state.selectedTrashIds = new Set(Array.from(state.selectedTrashIds).filter((id) => visibleIds.has(String(id))));
+  const selectedCount = state.selectedTrashIds.size;
+  panel.classList.remove("hidden");
+  panel.setAttribute("aria-hidden", "false");
+  const count = $("#trash-selected-count");
+  if (count) count.textContent = `Выбрано: ${selectedCount}`;
+  const deleteSelected = $("#trash-delete-selected-btn");
+  if (deleteSelected) deleteSelected.setAttribute("aria-disabled", selectedCount === 0 ? "true" : "false");
+}
+
+function toggleTrashSelection(id, selected) {
+  if (!id || !isTrashFilterActive()) return;
+  const measurement = state.measurements.find((item) => String(item.id) === String(id));
+  if (!measurement?.is_deleted || measurement.local_id) return;
+  if (selected) state.selectedTrashIds.add(String(id));
+  else state.selectedTrashIds.delete(String(id));
+  renderList();
+}
+
+function selectVisibleTrashMeasurements() {
+  visibleTrashMeasurements().forEach((measurement) => {
+    if (measurement.id && !measurement.local_id) state.selectedTrashIds.add(String(measurement.id));
+  });
+  renderList();
+}
+
+function clearTrashSelection() {
+  state.selectedTrashIds.clear();
+  renderList();
+}
+
+
 function renderStats() {
   const visible = state.measurements.filter((m) => !m.is_deleted);
   $("#stat-drafts").textContent = visible.filter((m) => m.status === "Черновик").length;
@@ -1528,15 +1601,37 @@ function renderStats() {
 function renderList() {
   const list = $("#measurements-list");
   const items = filteredMeasurements();
-  if (!items.length) return list.innerHTML = `<p class="muted-text">Замеры по текущему поиску не найдены.</p>`;
+  renderTrashActions(items);
+  if (!items.length) {
+    list.innerHTML = `<p class="muted-text">Замеры по текущему поиску не найдены.</p>`;
+    return;
+  }
+  const showTrashCheckboxes = isTrashFilterActive();
   list.innerHTML = items.map((m) => {
     const c = m.clients || {};
     const active = state.selected?.id === m.id ? "active" : "";
     const modeLabel = MEASUREMENT_MODE_LABELS[modeFromDrawingProject(m.drawing_project_json)];
     const measurerChip = measurementMeasurerName(m) ? `<span class="small-chip">Замерщик: ${escapeHtml(measurementMeasurerName(m))}</span>` : "";
-    return `<button class="measurement-item ${active}" data-id="${escapeHtml(m.id)}"><div class="number">${escapeHtml(m.number)}</div><div>${escapeHtml(c.name || "Клиент не указан")}</div><div class="address">${escapeHtml(c.address || "Адрес не указан")}</div><div class="measurement-meta">${m.is_deleted ? `<span class="small-chip danger-chip">Корзина</span>` : ""}<span class="small-chip">${escapeHtml(m.status)}</span><span class="small-chip">${escapeHtml(m.site_situation)}</span><span class="small-chip">${escapeHtml(m.opening_type)}</span><span class="small-chip mode-chip">${escapeHtml(modeLabel)}</span>${measurerChip}</div></button>`;
+    const checked = state.selectedTrashIds.has(String(m.id)) ? "checked" : "";
+    const checkbox = showTrashCheckboxes ? `<label class="trash-select" aria-label="Выбрать замер ${escapeHtml(m.number || m.id)}"><input type="checkbox" data-trash-select-id="${escapeHtml(m.id)}" ${checked} /><span>Выбрать</span></label>` : "";
+    return `<div class="measurement-item ${active}" role="button" tabindex="0" data-id="${escapeHtml(m.id)}">${checkbox}<div class="number">${escapeHtml(m.number)}</div><div>${escapeHtml(c.name || "Клиент не указан")}</div><div class="address">${escapeHtml(c.address || "Адрес не указан")}</div><div class="measurement-meta">${m.is_deleted ? `<span class="small-chip danger-chip">Корзина</span>` : ""}<span class="small-chip">${escapeHtml(m.status)}</span><span class="small-chip">${escapeHtml(m.site_situation)}</span><span class="small-chip">${escapeHtml(m.opening_type)}</span><span class="small-chip mode-chip">${escapeHtml(modeLabel)}</span>${measurerChip}</div></div>`;
   }).join("");
-  $$(".measurement-item").forEach((btn) => btn.addEventListener("click", () => selectMeasurement(btn.dataset.id)));
+  $$(".measurement-item").forEach((item) => {
+    item.addEventListener("click", (event) => {
+      if (event.target.closest("[data-trash-select-id]")) return;
+      selectMeasurement(item.dataset.id);
+    });
+    item.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      if (event.target.closest("[data-trash-select-id]")) return;
+      event.preventDefault();
+      selectMeasurement(item.dataset.id);
+    });
+  });
+  $$("[data-trash-select-id]").forEach((checkbox) => {
+    checkbox.addEventListener("click", (event) => event.stopPropagation());
+    checkbox.addEventListener("change", () => toggleTrashSelection(checkbox.dataset.trashSelectId, checkbox.checked));
+  });
 }
 
 function showNewMeasurementModePicker() {
@@ -1992,25 +2087,28 @@ async function deleteClientIfMeasurementWasLast(clientId) {
   if (clientError) throw new Error(`Ошибка удаления клиента: ${clientError.message || clientError}`);
 }
 
-async function permanentDeleteSelectedMeasurement() {
-  if (isLocalOfflineDraft()) {
-    setMessage($("#form-message"), offlineDraftMessage(), "error");
-    return;
-  }
-  if (!canUseTrashActions()) {
-    setMessage($("#form-message"), "Войдите в приложение, чтобы удалить замер навсегда.", "error");
-    return;
-  }
-  if (!state.selected?.id) return;
-  const measurement = state.selected;
+function ensurePermanentDeletePassword(messageTarget = $("#form-message")) {
   const password = prompt("Введите пароль для полного удаления из Supabase");
-  if (password !== PERMANENT_DELETE_PASSWORD) {
-    setMessage($("#form-message"), "Неверный пароль. Удаление отменено.", "error");
-    alert("Неверный пароль. Удаление отменено.");
-    return;
+  if (password === PERMANENT_DELETE_PASSWORD) return true;
+  setMessage(messageTarget, "Неверный пароль. Удаление отменено.", "error");
+  alert("Неверный пароль. Удаление отменено.");
+  return false;
+}
+
+function explainDeleteError(error) {
+  const message = error?.message || String(error);
+  const lower = message.toLowerCase();
+  if (lower.includes("row-level security") || lower.includes("permission denied") || lower.includes("not authorized") || lower.includes("unauthorized") || lower.includes("42501")) {
+    return `${message}. Проверьте DELETE policies RLS для measurements, measurement_photos и clients.`;
   }
-  if (!confirm(`Удалить замер ${measurement.number || "замер"} навсегда из Supabase? Будут удалены замер, фото и файлы Storage. Это действие нельзя отменить.`)) return;
-  if (!requireOnlineSupabaseAction()) return;
+  return message;
+}
+
+async function permanentDeleteMeasurementById(measurement) {
+  if (!measurement?.id) throw new Error("Замер не найден для полного удаления.");
+  if (measurement.local_id) throw new Error("Локальные TEMP-черновики не удаляются из Supabase.");
+  if (measurement.is_deleted !== true) throw new Error("Полное удаление доступно только для замеров из корзины.");
+  if (!supabaseClient || !navigator.onLine) throw new Error(offlineActionMessage());
 
   const { data: photos, error: photosError } = await supabaseClient
     .from("measurement_photos")
@@ -2033,8 +2131,96 @@ async function permanentDeleteSelectedMeasurement() {
   if (measurementError) throw new Error(`Ошибка удаления замера: ${measurementError.message || measurementError}`);
 
   await deleteClientIfMeasurementWasLast(measurement.client_id);
+  return measurement.id;
+}
+
+async function permanentDeleteSelectedMeasurement() {
+  if (isLocalOfflineDraft()) {
+    setMessage($("#form-message"), offlineDraftMessage(), "error");
+    return;
+  }
+  if (!canUseTrashActions()) {
+    setMessage($("#form-message"), "Войдите в приложение, чтобы удалить замер навсегда.", "error");
+    return;
+  }
+  if (!state.selected?.id) return;
+  const measurement = state.selected;
+  if (!ensurePermanentDeletePassword($("#form-message"))) return;
+  if (!confirm(`Удалить замер ${measurement.number || "замер"} навсегда из Supabase? Будут удалены замер, фото и файлы Storage. Это действие нельзя отменить.`)) return;
+  if (!requireOnlineSupabaseAction()) return;
+
+  try {
+    await permanentDeleteMeasurementById(measurement);
+  } catch (error) {
+    throw new Error(explainDeleteError(error));
+  }
   state.measurements = state.measurements.filter((item) => item.id !== measurement.id);
+  state.selectedTrashIds.delete(String(measurement.id));
   resetSelectedMeasurement("Замер полностью удалён из Supabase.");
+}
+
+async function bulkPermanentDeleteMeasurements(measurements, successMessage) {
+  const candidates = (measurements || []).filter((measurement) => measurement?.id && measurement.is_deleted === true && !measurement.local_id);
+  const errors = [];
+  const deletedIds = [];
+  const total = candidates.length;
+
+  for (let index = 0; index < candidates.length; index += 1) {
+    const measurement = candidates[index];
+    setTrashActionsMessage(`Удаляю ${index + 1} из ${total}…`);
+    try {
+      await permanentDeleteMeasurementById(measurement);
+      deletedIds.push(String(measurement.id));
+    } catch (error) {
+      errors.push({ measurement, error: explainDeleteError(error) });
+      console.error("Bulk permanent delete failed", measurement.id, error);
+    }
+  }
+
+  if (deletedIds.length) {
+    const deleted = new Set(deletedIds);
+    state.measurements = state.measurements.filter((measurement) => !deleted.has(String(measurement.id)));
+    state.selectedTrashIds = new Set(Array.from(state.selectedTrashIds).filter((id) => !deleted.has(String(id))));
+    if (state.selected?.id && deleted.has(String(state.selected.id))) resetSelectedMeasurement("");
+  }
+
+  renderStats();
+  renderList();
+  const summary = `Удалено: ${deletedIds.length}. Ошибок: ${errors.length}.`;
+  setTrashActionsMessage(errors.length ? summary : `${successMessage} ${summary}`, errors.length ? "error" : "ok");
+  if (errors.length) console.warn("Bulk permanent delete finished with errors", errors);
+}
+
+async function deleteSelectedTrashMeasurements() {
+  if (!canUseTrashActions()) {
+    setTrashActionsMessage("Войдите в приложение, чтобы удалить замеры навсегда.", "error");
+    return;
+  }
+  const measurements = selectedTrashMeasurements();
+  if (!measurements.length) {
+    setTrashActionsMessage("Выберите замеры для удаления.", "error");
+    return;
+  }
+  if (!ensurePermanentDeletePassword($("#trash-actions-message"))) return;
+  if (!confirm("Удалить выбранные замеры навсегда из Supabase? Будут удалены замеры, фото и файлы Storage. Это действие нельзя отменить.")) return;
+  if (!requireOnlineSupabaseAction()) return;
+  await bulkPermanentDeleteMeasurements(measurements, "Выбранные замеры полностью удалены из Supabase.");
+}
+
+async function clearTrashMeasurements() {
+  if (!canUseTrashActions()) {
+    setTrashActionsMessage("Войдите в приложение, чтобы очистить корзину.", "error");
+    return;
+  }
+  const measurements = allTrashMeasurements();
+  if (!measurements.length) {
+    setTrashActionsMessage("Корзина уже пуста.", "ok");
+    return;
+  }
+  if (!ensurePermanentDeletePassword($("#trash-actions-message"))) return;
+  if (!confirm("Очистить всю корзину навсегда? Будут удалены все замеры из корзины, фото и файлы Storage. Это действие нельзя отменить.")) return;
+  if (!requireOnlineSupabaseAction()) return;
+  await bulkPermanentDeleteMeasurements(measurements, "Корзина полностью очищена из Supabase.");
 }
 
 async function loadPhotos(measurementId) {
@@ -2950,6 +3136,10 @@ function bind() {
   });
   $("#status-filter").addEventListener("change", renderList);
   $("#measurement-search").addEventListener("input", renderList);
+  $("#trash-select-all-btn")?.addEventListener("click", selectVisibleTrashMeasurements);
+  $("#trash-clear-selection-btn")?.addEventListener("click", clearTrashSelection);
+  $("#trash-delete-selected-btn")?.addEventListener("click", () => deleteSelectedTrashMeasurements().catch((e) => setTrashActionsMessage(`Не удалось удалить выбранные замеры: ${userFacingError(e)}`, "error")));
+  $("#trash-clear-all-btn")?.addEventListener("click", () => clearTrashMeasurements().catch((e) => setTrashActionsMessage(`Не удалось очистить корзину: ${userFacingError(e)}`, "error")));
   $("#measurement-preview").addEventListener("click", (event) => {
     if (event.target.closest("[data-open-measurements]")) openMeasurementsScreen();
     if (event.target.closest("[data-edit-measurement]")) editSelectedMeasurement();

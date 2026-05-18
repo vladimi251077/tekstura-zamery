@@ -1,11 +1,11 @@
-const CACHE_VERSION = "tekstura-offline-shell-v10";
+const CACHE_VERSION = "tekstura-offline-shell-v11";
 const APP_SHELL_CACHE = `${CACHE_VERSION}-app-shell`;
 
 const APP_SHELL_URLS = [
   "./",
   "./index.html",
   "./styles.css?v=20260518-photo-render",
-  "./app.js?v=20260518-v35",
+  "./app.js?v=20260518-v36",
   "./offline-db.js?v=20260517-v4",
   "./photo-preview.js?v=20260515-v14",
   "./details-enhance.js?v=20260515-v14",

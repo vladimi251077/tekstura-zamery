@@ -1231,6 +1231,10 @@ function canDeleteMeasurements() {
   return roleMatches("admin", "manager");
 }
 
+function canUseTrashActions() {
+  return Boolean(state.user);
+}
+
 function isTrashMeasurement(measurement = state.selected) {
   return Boolean(measurement?.is_deleted);
 }
@@ -1280,12 +1284,12 @@ function applyRoleUI() {
   const technicalActions = $("#technical-actions");
   const productionLink = $("#production-link");
   const selectedInTrash = isTrashMeasurement();
-  const canUseTechnicalActions = canUseTechnicalExports() || canArchiveMeasurements() || canDeleteMeasurements();
+  const canUseTechnicalActions = canUseTechnicalExports() || canArchiveMeasurements() || canUseTrashActions();
   acceptBtn?.classList.toggle("hidden", selectedInTrash || !canAcceptMeasurements());
   archiveBtn?.classList.toggle("hidden", selectedInTrash || !canArchiveMeasurements());
-  deleteBtn?.classList.toggle("hidden", selectedInTrash || !canDeleteMeasurements());
-  restoreBtn?.classList.toggle("hidden", !selectedInTrash || !canDeleteMeasurements());
-  permanentDeleteBtn?.classList.toggle("hidden", !selectedInTrash || !canDeleteMeasurements());
+  deleteBtn?.classList.toggle("hidden", selectedInTrash || !canUseTrashActions());
+  restoreBtn?.classList.toggle("hidden", !selectedInTrash || !canUseTrashActions());
+  permanentDeleteBtn?.classList.toggle("hidden", !selectedInTrash || !canUseTrashActions());
   jsonBtn?.classList.toggle("hidden", !canUseTechnicalExports());
   csvBtn?.classList.toggle("hidden", !canUseTechnicalExports());
   technicalActions?.classList.toggle("hidden", !canUseTechnicalActions);
@@ -1915,8 +1919,8 @@ async function moveSelectedMeasurementToTrash() {
     setMessage($("#form-message"), offlineDraftMessage(), "error");
     return;
   }
-  if (!canDeleteMeasurements()) {
-    setMessage($("#form-message"), "Удаление доступно только администратору/менеджеру.", "error");
+  if (!canUseTrashActions()) {
+    setMessage($("#form-message"), "Войдите в приложение, чтобы перенести замер в корзину.", "error");
     return;
   }
   if (!state.selected?.id) return;
@@ -1930,7 +1934,7 @@ async function moveSelectedMeasurementToTrash() {
     .eq("id", state.selected.id)
     .select("*, clients(*)")
     .single();
-  if (error) throw error;
+  if (error) throw new Error("Нет прав Supabase на перенос в корзину. Нужна настройка RLS.");
   replaceMeasurementInState(data);
   resetSelectedMeasurement("Замер перемещён в корзину.");
 }
@@ -1940,8 +1944,8 @@ async function restoreSelectedMeasurementFromTrash() {
     setMessage($("#form-message"), offlineDraftMessage(), "error");
     return;
   }
-  if (!canDeleteMeasurements()) {
-    setMessage($("#form-message"), "Восстановление доступно только администратору/менеджеру.", "error");
+  if (!canUseTrashActions()) {
+    setMessage($("#form-message"), "Войдите в приложение, чтобы восстановить замер.", "error");
     return;
   }
   if (!state.selected?.id) return;
@@ -1993,8 +1997,8 @@ async function permanentDeleteSelectedMeasurement() {
     setMessage($("#form-message"), offlineDraftMessage(), "error");
     return;
   }
-  if (!canDeleteMeasurements()) {
-    setMessage($("#form-message"), "Полное удаление доступно только администратору/менеджеру.", "error");
+  if (!canUseTrashActions()) {
+    setMessage($("#form-message"), "Войдите в приложение, чтобы удалить замер навсегда.", "error");
     return;
   }
   if (!state.selected?.id) return;
@@ -2351,7 +2355,7 @@ function renderPreview() {
   const productionHref = productionUrl(m);
   const inTrash = isTrashMeasurement(m);
   const canEdit = canEditMeasurements() && !inTrash;
-  const canDelete = canDeleteMeasurements();
+  const canDelete = canUseTrashActions();
   box.innerHTML = `
     <div class="preview-head">
       <div>

@@ -137,6 +137,7 @@
                   <option value="Нужны уточнения">Нужны уточнения</option>
                   <option value="Готовый замер">Готовый замер</option>
                   <option value="Архив">Архив</option>
+                  <option value="trash">Корзина</option>
                 </select>
               </div>
 
@@ -351,7 +352,9 @@
                     <button id="download-json-btn" type="button" class="btn secondary">Скачать JSON</button>
                     <button id="download-csv-btn" type="button" class="btn secondary">Скачать CSV</button>
                     <button id="archive-btn" type="button" class="btn warning-btn">Перевести в архив</button>
-                    <button id="soft-delete-btn" type="button" class="btn danger">Мягко удалить</button>
+                    <button id="soft-delete-btn" type="button" class="btn danger">Удалить</button>
+                    <button id="restore-measurement-btn" type="button" class="btn secondary hidden">Восстановить</button>
+                    <button id="permanent-delete-btn" type="button" class="btn danger hidden">Удалить навсегда</button>
                   </div>
                   <p class="muted-text small">Служебные действия доступны администратору, менеджеру или конструктору и скрыты от основного мобильного сценария замерщика.</p>
                 </details>
@@ -363,7 +366,7 @@
       </main>
     </div>
     <script src="./offline-db.js?v=20260517-v4"></script>
-    <script src="./app.js?v=20260518-v34"></script>
+    <script src="./app.js?v=20260518-v35"></script>
     <script src="./photo-preview.js?v=20260515-v14"></script>
     <script src="./details-enhance.js?v=20260515-v14"></script>
     <script src="./scheme-sketch.js?v=20260506-disabled"></script>

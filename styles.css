@@ -391,6 +391,7 @@ input:focus, textarea:focus, select:focus { border-color: #111827; box-shadow: 0
 .photo-card-body { display: grid; gap: 6px; }
 .photo-path { word-break: break-all; color: var(--muted); font-size: 11px; }
 .photo-delete-btn { justify-self: start; padding: 8px 12px; font-size: 12px; }
+.danger-chip { background: #fee2e2; color: #991b1b; border-color: #fecaca; }
 
 
 .photo-warning {
@@ -406,7 +407,9 @@ input:focus, textarea:focus, select:focus { border-color: #111827; box-shadow: 0
 body[data-user-role="zamer"] #accept-btn,
 body[data-user-role="zamerschik"] #accept-btn,
 body[data-user-role="замерщик"] #accept-btn{display:none!important}
-body:not([data-user-role*="admin"]) #soft-delete-btn{display:none!important}
+body:not([data-user-role*="admin"]):not([data-user-role*="manager"]) #soft-delete-btn,
+body:not([data-user-role*="admin"]):not([data-user-role*="manager"]) #restore-measurement-btn,
+body:not([data-user-role*="admin"]):not([data-user-role*="manager"]) #permanent-delete-btn{display:none!important}
 body:not([data-user-role*="admin"]):not([data-user-role*="manager"]):not([data-user-role*="рук"]) #archive-btn{display:none!important}
 body:not([data-user-role*="admin"]):not([data-user-role*="manager"]):not([data-user-role*="конструкт"]):not([data-user-role*="constructor"]) #download-json-btn,
 body:not([data-user-role*="admin"]):not([data-user-role*="manager"]):not([data-user-role*="конструкт"]):not([data-user-role*="constructor"]) #download-csv-btn{display:none!important}

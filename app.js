@@ -2084,6 +2084,89 @@ function previewPhotoMarkup() {
   }).join("")}</div>`;
 }
 
+
+const MAIN_PREVIEW_SVG_STYLE_ID = "main-preview-svg-safe-style";
+const MAIN_PREVIEW_SVG_STYLE = `
+  svg{background:#fff;}
+  .flight,.landing,.platform,.turn,.step,.opening,.zone{fill:#f8fafc;stroke:#0f172a;stroke-width:2;vector-effect:non-scaling-stroke;}
+  .turn,.landing,.platform,.zone.turn{fill:#eef6ff;}
+  .step,.tread,.step-line{fill:none;stroke:#1e293b;stroke-width:1.4;vector-effect:non-scaling-stroke;}
+  .opening,.outline{fill:#fff;stroke:#0f172a;stroke-width:2.2;vector-effect:non-scaling-stroke;}
+  .wall,.wall-line,.wall-mark{fill:none;stroke:#94a3b8;stroke-width:9;stroke-linecap:round;vector-effect:non-scaling-stroke;}
+  .dimension line,.dimension path,.dim,.route{fill:none;stroke:#0f172a;stroke-width:1.8;vector-effect:non-scaling-stroke;}
+  .dimension text,.label,.caption{font:800 15px system-ui,sans-serif;fill:#0f172a;paint-order:stroke;stroke:#fff;stroke-width:4px;stroke-linejoin:round;}
+  .zone-hit,.dim-hit,.wall-hit,.window-hit,.ascent-hit{fill:transparent!important;stroke:transparent!important;display:none!important;}
+  .winder-step{fill:#eef6ff;stroke:#1e293b;stroke-width:1.4;vector-effect:non-scaling-stroke;}
+  .winder-envelope{fill:#e0f2fe;stroke:#0f172a;stroke-width:2;vector-effect:non-scaling-stroke;}
+  .window-mark{fill:#e0f2fe;stroke:#0284c7;stroke-width:3;vector-effect:non-scaling-stroke;}
+  .obstacle-mark{fill:#fff7ed;stroke:#ea580c;stroke-width:3;vector-effect:non-scaling-stroke;}
+`;
+const MAIN_PREVIEW_HIT_CLASSES = ["zone-hit", "dim-hit", "wall-hit", "window-hit", "ascent-hit"];
+const MAIN_PREVIEW_LINE_CLASSES = ["step", "tread", "step-line", "dimension", "dim", "route", "wall", "wall-line", "wall-mark"];
+
+function mainPreviewSvgClassList(node) {
+  return String(node.getAttribute("class") || "").split(/\s+/).filter(Boolean);
+}
+
+function mainPreviewSvgHasAnyClass(node, classes) {
+  const nodeClasses = mainPreviewSvgClassList(node);
+  return classes.some((name) => nodeClasses.includes(name));
+}
+
+function mainPreviewSvgHasPaint(node) {
+  return node.hasAttribute("fill") || node.hasAttribute("stroke") || node.hasAttribute("style");
+}
+
+function ensureMainPreviewSvgStyle(parsed, svg) {
+  const existing = svg.querySelector(`style#${MAIN_PREVIEW_SVG_STYLE_ID}`);
+  if (existing) {
+    existing.textContent = MAIN_PREVIEW_SVG_STYLE;
+    return;
+  }
+  const style = parsed.createElementNS("http://www.w3.org/2000/svg", "style");
+  style.setAttribute("id", MAIN_PREVIEW_SVG_STYLE_ID);
+  style.textContent = MAIN_PREVIEW_SVG_STYLE;
+  const first = svg.firstChild;
+  if (first) svg.insertBefore(style, first);
+  else svg.appendChild(style);
+}
+
+function hardenPreviewSvgPaint(svg) {
+  svg.querySelectorAll(".zone-hit, .dim-hit, .wall-hit, .window-hit, .ascent-hit").forEach((node) => {
+    node.setAttribute("fill", "transparent");
+    node.setAttribute("stroke", "transparent");
+    node.setAttribute("display", "none");
+  });
+
+  svg.querySelectorAll("rect, polygon, path, line, polyline").forEach((node) => {
+    if (mainPreviewSvgHasAnyClass(node, MAIN_PREVIEW_HIT_CLASSES)) return;
+    if (mainPreviewSvgHasPaint(node)) return;
+    const tag = node.nodeName.toLowerCase();
+    if (tag === "line" || tag === "polyline" || mainPreviewSvgHasAnyClass(node, MAIN_PREVIEW_LINE_CLASSES)) {
+      node.setAttribute("fill", "none");
+      node.setAttribute("stroke", "#1e293b");
+      return;
+    }
+    if (tag === "path") {
+      node.setAttribute("fill", "#f8fafc");
+      node.setAttribute("stroke", "#0f172a");
+      return;
+    }
+    node.setAttribute("fill", mainPreviewSvgHasAnyClass(node, ["turn", "landing", "platform"]) ? "#eef6ff" : "#f8fafc");
+    node.setAttribute("stroke", "#0f172a");
+  });
+}
+
+function enhanceMainPreviewSvg(svgText) {
+  if (!svgText || typeof DOMParser === "undefined" || typeof XMLSerializer === "undefined") return svgText || "";
+  const parsed = new DOMParser().parseFromString(svgText, "image/svg+xml");
+  const svg = parsed.documentElement;
+  if (!svg || svg.nodeName.toLowerCase() !== "svg" || svg.querySelector("parsererror")) return svgText;
+  ensureMainPreviewSvgStyle(parsed, svg);
+  hardenPreviewSvgPaint(svg);
+  return new XMLSerializer().serializeToString(svg);
+}
+
 function previewClarificationMarkup(m) {
   const notes = [];
   if (m.status === "Нужны уточнения") notes.push("Статус замера требует уточнения.");
@@ -2134,7 +2217,7 @@ function renderPreview() {
       <section class="preview-section">
         <h3>Размеры и схема</h3>
         ${previewDimensionMarkup(m, project)}
-        <div class="preview-scheme">${m.drawing_svg || `<span class="muted-text">Схема не сохранена.</span>`}</div>
+        <div class="preview-scheme">${enhanceMainPreviewSvg(m.drawing_svg) || `<span class="muted-text">Схема не сохранена.</span>`}</div>
         ${project.type ? `<p class="muted-text small">Тип схемы: ${escapeHtml(project.type)}</p>` : ""}
       </section>
 

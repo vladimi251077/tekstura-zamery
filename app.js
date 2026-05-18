@@ -3029,12 +3029,32 @@ async function deletePhoto(photoId) {
   if (!photo) return setMessage($("#form-message"), "Это фото не относится к открытому замеру.", "error");
   if (!confirm(`Удалить фото «${photo.photo_type || "Фото"}» из этого замера?`)) return;
   setMessage($("#form-message"), "Удаляю фото...");
+  const { error: deleteLinkError } = await supabaseClient
+    .from("measurement_photos")
+    .delete()
+    .eq("id", photoId)
+    .eq("measurement_id", state.selected.id);
+
+  if (deleteLinkError) {
+    const message = String(deleteLinkError.message || "").toLowerCase();
+    const details = String(deleteLinkError.details || "").toLowerCase();
+    const denied = message.includes("permission denied") || message.includes("rls") || details.includes("permission denied") || details.includes("rls");
+    if (denied) {
+      setMessage($("#form-message"), "Нет прав Supabase на удаление фото. Нужна настройка RLS для measurement_photos/storage.objects.", "error");
+      return;
+    }
+    throw deleteLinkError;
+  }
+
   if (photo.file_path) {
     const { error: storageError } = await supabaseClient.storage.from("measurement-photos").remove([photo.file_path]);
-    if (storageError) console.warn("Не удалось удалить файл из storage", storageError);
+    if (storageError) {
+      const storageMessage = String(storageError.message || "").toLowerCase();
+      const missingObject = storageMessage.includes("not found") || storageMessage.includes("no such") || storageMessage.includes("404");
+      if (!missingObject) console.warn("Не удалось удалить файл из storage", storageError);
+    }
   }
-  const { error } = await supabaseClient.from("measurement_photos").delete().eq("id", photoId).eq("measurement_id", state.selected.id);
-  if (error) throw error;
+
   await loadPhotos(state.selected.id);
   renderPhotos();
   renderChecks();

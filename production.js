@@ -800,3 +800,4 @@ init().catch((error) => {
   console.error(error);
   setMessage($("#prod-auth-message"), error.message, "error");
 });
+// cache bust 20260518-hotfix2

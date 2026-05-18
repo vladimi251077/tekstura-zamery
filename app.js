@@ -1005,6 +1005,40 @@ function safeExt(filename) {
   return "jpg";
 }
 
+function normalizePhotoStoragePath(path) {
+  const normalized = String(path || "").trim().replace(/^\/+/, "");
+  return normalized.startsWith("measurement-photos/") ? normalized.slice("measurement-photos/".length) : normalized;
+}
+
+async function signedPhotoUrl(path) {
+  const filePath = normalizePhotoStoragePath(path);
+  if (!filePath || !supabaseClient) return "";
+  try {
+    const { data, error } = await supabaseClient.storage.from("measurement-photos").createSignedUrl(filePath, 60 * 60);
+    if (error) {
+      console.warn("Не удалось создать signed URL для фото", { filePath, error });
+      return "";
+    }
+    return data?.signedUrl || "";
+  } catch (error) {
+    console.warn("Не удалось создать signed URL для фото", { filePath, error });
+    return "";
+  }
+}
+
+function renderPhotoFallback(message, filePath, hidden = false) {
+  return `<div class="photo-fallback ${hidden ? "hidden" : ""}">
+    <strong>${escapeHtml(message)}</strong>
+    ${filePath ? `<small>${escapeHtml(filePath)}</small>` : ""}
+  </div>`;
+}
+
+function renderPhotoImage(url, title, filePath) {
+  return `<div class="photo-media" data-file-path="${escapeHtml(filePath)}">
+    <img src="${escapeHtml(url)}" alt="${escapeHtml(title)}" loading="lazy" onerror="this.classList.add('hidden');var n=this.nextElementSibling;if(n)n.classList.remove('hidden');" />
+    ${renderPhotoFallback("Файл не открылся", filePath, true)}
+  </div>`;
+}
 
 function photoPathBelongsToMeasurement(photo, measurement) {
   if (!photo || !measurement?.id) return false;
@@ -1865,7 +1899,11 @@ async function loadPhotos(measurementId) {
   }
   if (state.selected?.id !== measurementId) return;
   state.photoScopeId = measurementId;
-  state.photos = filterPhotosForMeasurement(data || [], state.selected);
+  const filtered = filterPhotosForMeasurement(data || [], state.selected);
+  state.photos = await Promise.all(filtered.map(async (photo) => ({
+    ...photo,
+    url: await signedPhotoUrl(photo.file_path),
+  })));
 }
 
 function previewValue(value, fallback = "—") {
@@ -2011,17 +2049,6 @@ function previewDimensionMarkup(measurement, project) {
   return rows.length ? rows.join("") : `<p class="muted-text">Рабочие размеры не заполнены.</p>`;
 }
 
-function photoPublicUrl(photo) {
-  const path = String(photo?.file_path || "").trim();
-  if (!path || !supabaseClient) return "";
-  try {
-    return supabaseClient.storage.from("measurement-photos").getPublicUrl(path).data?.publicUrl || "";
-  } catch (error) {
-    console.warn("Не удалось получить public URL фото", error);
-    return "";
-  }
-}
-
 function localPhotoObjectUrl(photo) {
   if (!photo?.blob) return "";
   try {
@@ -2033,7 +2060,7 @@ function localPhotoObjectUrl(photo) {
 }
 
 function photoPreviewUrl(photo) {
-  return photo?.local_photo_id ? localPhotoObjectUrl(photo) : photoPublicUrl(photo);
+  return photo?.local_photo_id ? localPhotoObjectUrl(photo) : photo?.url || "";
 }
 
 function previewPhotoMarkup() {
@@ -2041,15 +2068,18 @@ function previewPhotoMarkup() {
   if (!photos.length) return `<p class="muted-text">Фото ещё не добавлены.</p>`;
   return `<div class="preview-photos">${photos.map((photo) => {
     const type = photo.photo_type || "Фото";
-    const publicUrl = photoPreviewUrl(photo);
-    const media = publicUrl
-      ? `<img src="${escapeHtml(publicUrl)}" alt="${escapeHtml(type)}" loading="lazy" />`
-      : `<div class="preview-photo-thumb">Фото</div>`;
+    const previewUrl = photoPreviewUrl(photo);
+    const filePath = photo.file_path || photo.server_file_path || "";
+    const media = previewUrl
+      ? renderPhotoImage(previewUrl, type, filePath)
+      : photo.local_photo_id
+        ? `<div class="preview-photo-thumb">Фото</div>`
+        : `<div class="preview-photo-media is-error">${renderPhotoFallback("Фото есть в базе, но файл недоступен в Storage", filePath)}</div>`;
     return `
     <div class="preview-photo-card">
-      <div class="preview-photo-media">${media}</div>
+      ${media}
       <b>${previewValue(type, "Фото")}</b>
-      <span>${previewValue(photo.file_path, "")}</span>
+      <span>${previewValue(filePath, "")}</span>
     </div>`;
   }).join("")}</div>`;
 }
@@ -2372,15 +2402,22 @@ function renderPhotos() {
     updatePhotoStatusFromInput();
     return;
   }
-  box.innerHTML = `${note}${photos.map((p) => `
+  box.innerHTML = `${note}${photos.map((p) => {
+    const filePath = p.file_path || "";
+    const titleText = p.photo_type || "Фото";
+    const media = p.url
+      ? renderPhotoImage(p.url, titleText, filePath)
+      : `<div class="photo-media is-error">${renderPhotoFallback("Фото есть в базе, но файл недоступен в Storage", filePath)}</div>`;
+    return `
     <div class="photo-card" data-photo-id="${escapeHtml(p.id)}" data-measurement-id="${escapeHtml(p.measurement_id)}">
-      <div style="aspect-ratio:4/3;display:grid;place-items:center;background:#e5e7eb;">Фото</div>
+      ${media}
       <div class="photo-card-body">
-        <b>${escapeHtml(p.photo_type || "Фото")}</b>
-        <span class="photo-path">${escapeHtml(p.file_path || "")}</span>
+        <b>${escapeHtml(titleText)}</b>
+        <span class="photo-path">${escapeHtml(filePath)}</span>
         <button type="button" class="btn danger photo-delete-btn" data-delete-photo-id="${escapeHtml(p.id)}">Убрать фото из этого замера</button>
       </div>
-    </div>`).join("")}`;
+    </div>`;
+  }).join("")}`;
   updatePhotoStatusFromInput();
 }
 

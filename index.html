@@ -14,7 +14,7 @@
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" />
     <link rel="stylesheet" href="./styles.css?v=20260518-trash-bulk" />
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer onerror="window.supabase = null; console.warn('Supabase CDN is unavailable, offline mode only.');"></script>
   </head>
   <body>
     <div id="app">
@@ -368,6 +368,8 @@
                     <button id="permanent-delete-btn" type="button" class="btn danger hidden">Удалить навсегда</button>
                   </div>
                   <p class="muted-text small">Служебные выгрузки доступны по роли, а корзина — всем вошедшим сотрудникам; полное удаление защищено паролем.</p>
+                  <button id="offline-healthcheck-btn" type="button" class="btn secondary">Проверить офлайн-доступ</button>
+                  <p id="offline-healthcheck-result" class="muted-text small" aria-live="polite"></p>
                 </details>
                 <p id="form-message" class="form-message"></p>
               </form>
@@ -377,7 +379,7 @@
       </main>
     </div>
     <script src="./offline-db.js?v=20260517-v4"></script>
-    <script src="./app.js?v=20260518-v38"></script>
+    <script src="./app.js?v=20260524-v39"></script>
     <script src="./photo-preview.js?v=20260515-v14"></script>
     <script src="./details-enhance.js?v=20260515-v14"></script>
     <script src="./scheme-sketch.js?v=20260506-disabled"></script>

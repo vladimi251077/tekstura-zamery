@@ -3,6 +3,7 @@ const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 
 const SUPABASE_PROJECT_REF = new URL(SUPABASE_URL).hostname.split(".")[0];
 const SUPABASE_AUTH_STORAGE_KEY = `sb-${SUPABASE_PROJECT_REF}-auth-token`;
+const REMEMBERED_AUTH_KEY = "tekstura-remembered-auth-v1";
 const OFFLINE_STARTUP_MESSAGE = "Офлайн. Интернет недоступен. Можно создать локальный TEMP-черновик: данные и размеры сохранятся в этом телефоне.";
 const LOCAL_OFFLINE_DRAFT_MESSAGE = "Это локальный офлайн-черновик. Раздел для изготовителя будет доступен после синхронизации в Supabase.";
 const PHOTO_OFFLINE_DRAFT_MESSAGE = "Фото сохранены в телефоне. При синхронизации они будут отправлены в Supabase.";
@@ -816,6 +817,62 @@ function fallbackProfileFromSession(user) {
   };
 }
 
+function buildRememberedAuthFromState() {
+  const identity = currentUserIdentity(state.user);
+  return {
+    user: {
+      id: state.user?.id || "",
+      email: state.user?.email || identity.email || "",
+    },
+    profile: {
+      full_name: state.profile?.full_name || identity.name || "Пользователь",
+      role: state.profile?.role || identity.role || "zamer",
+      login: identity.login || "",
+    },
+    saved_at: new Date().toISOString(),
+  };
+}
+
+function saveRememberedAuth() {
+  if (!state.user) return;
+  localStorage.setItem(REMEMBERED_AUTH_KEY, JSON.stringify(buildRememberedAuthFromState()));
+}
+
+function readRememberedAuth() {
+  try {
+    const raw = localStorage.getItem(REMEMBERED_AUTH_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.user?.id) return null;
+    return parsed;
+  } catch (error) {
+    console.warn("Remembered auth parse failed", error);
+    return null;
+  }
+}
+
+function clearRememberedAuth() {
+  localStorage.removeItem(REMEMBERED_AUTH_KEY);
+}
+
+function applyRememberedAuth(remembered) {
+  if (!remembered?.user?.id) return false;
+  state.user = {
+    id: remembered.user.id,
+    email: remembered.user.email || "",
+    user_metadata: {
+      login: remembered.profile?.login || "",
+      full_name: remembered.profile?.full_name || "",
+    },
+  };
+  state.profile = {
+    id: remembered.user.id,
+    full_name: remembered.profile?.full_name || "Пользователь",
+    role: remembered.profile?.role || "zamer",
+  };
+  return true;
+}
+
 const LOGIN_USERS = {
   ruslan: {
     email: "ruslan@tekstura-zamery.local",
@@ -1342,17 +1399,22 @@ async function loadProfile() {
 }
 
 async function init() {
+  const remembered = readRememberedAuth();
   if (!supabaseClient || !navigator.onLine) {
     const session = readStoredSupabaseSession();
     state.user = session?.user || null;
     if (state.user) {
       state.profile = fallbackProfileFromSession(state.user);
       showApp(true);
+    } else if (applyRememberedAuth(remembered)) {
+      showApp(true);
     } else {
       showApp(false);
+      setMessage($("#auth-message"), "Сначала войдите один раз при интернете. Потом приложение будет открываться без интернета.", "error");
     }
     showOfflineState();
     await loadOfflineDrafts();
+    updateRememberedAuthStatus();
     return;
   }
 
@@ -1362,14 +1424,21 @@ async function init() {
   } catch (error) {
     if (!isOfflineNetworkError(error)) throw error;
     state.user = readStoredSupabaseSession()?.user || null;
+    if (!state.user) applyRememberedAuth(remembered);
     showOfflineState();
   }
 
-  if (!state.user) return showApp(false);
+  if (!state.user) {
+    setMessage($("#auth-message"), "Сначала войдите один раз при интернете. Потом приложение будет открываться без интернета.", "error");
+    updateRememberedAuthStatus();
+    return showApp(false);
+  }
   await loadProfile();
+  saveRememberedAuth();
   showApp(true);
   await loadMeasurements();
   await loadOfflineDrafts();
+  updateRememberedAuthStatus();
 }
 
 async function login() {
@@ -1383,11 +1452,13 @@ async function login() {
   if (error) return setMessage($("#auth-message"), isOfflineNetworkError(error) ? offlineActionMessage() : "Неверный логин или код", "error");
   state.user = data.user;
   await loadProfile();
+  saveRememberedAuth();
   showApp(true);
   await loadMeasurements();
   setOfflineStartupNotice(false);
   await loadOfflineDrafts();
   setMessage($("#auth-message"), "");
+  updateRememberedAuthStatus();
 }
 
 async function signup() {
@@ -1404,6 +1475,7 @@ async function signup() {
 
 async function logout() {
   if (supabaseClient) await supabaseClient.auth.signOut();
+  clearRememberedAuth();
   state.user = null;
   state.profile = null;
   state.measurements = [];
@@ -1412,6 +1484,13 @@ async function logout() {
   state.photoScopeId = null;
   state.hiddenForeignPhotos = 0;
   showApp(false);
+  updateRememberedAuthStatus();
+}
+
+function updateRememberedAuthStatus() {
+  const el = $("#remembered-auth-status");
+  if (!el) return;
+  el.textContent = readRememberedAuth() ? "Вход запомнен на этом телефоне" : "Вход ещё не запомнен";
 }
 
 function getFormData() {
@@ -3260,4 +3339,5 @@ function bind() {
 bindNetworkIndicator();
 registerServiceWorker();
 bind();
+updateRememberedAuthStatus();
 init().catch((e) => { console.error(e); setMessage($("#auth-message"), userFacingError(e), "error"); });

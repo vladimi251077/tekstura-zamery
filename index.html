@@ -132,18 +132,16 @@
                 <select id="status-filter">
                   <option value="active">Рабочие</option>
                   <option value="all">Все</option>
-                  <option value="Черновик">Черновик</option>
-                  <option value="На проверке">На проверке</option>
-                  <option value="Нужны уточнения">Нужны уточнения</option>
                   <option value="Готовый замер">Готовый замер</option>
+                  <option value="Передан в расчёт">Передан в расчёт</option>
+                  <option value="Смета готова">Смета готова</option>
+                  <option value="Заказ принят">Заказ принят</option>
                   <option value="Архив">Архив</option>
                   <option value="trash">Корзина</option>
                 </select>
               </div>
 
               <div class="measurements-summary" aria-label="Статусы замеров">
-                <span><b id="stat-drafts">0</b> Черновики</span>
-                <span><b id="stat-review">0</b> На проверке</span>
                 <span><b id="stat-ready">0</b> Готовые</span>
                 <span><b id="stat-archive">0</b> Архив</span>
               </div>
@@ -179,7 +177,7 @@
                     <h2 id="form-title">Новый замер</h2>
                   </div>
                   <div class="form-head-side">
-                    <span id="form-status" class="badge">Черновик</span>
+                    <span id="form-status" class="badge">Готовый замер</span>
                     <span id="form-measurer" class="badge muted hidden"></span>
                     <div id="measurement-mode-box" class="measurement-mode-box">
                       <div class="mode-title">Режим замера: <b id="measurement-mode-current">Простой</b></div>
@@ -237,9 +235,6 @@
                     <div data-simple-hidden>
                       <label>Статус</label>
                       <select name="status">
-                        <option>Черновик</option>
-                        <option>На проверке</option>
-                        <option>Нужны уточнения</option>
                         <option>Готовый замер</option>
                         <option>Передан в расчёт</option>
                         <option>Смета готова</option>
@@ -353,8 +348,6 @@
 
                 <div class="form-actions">
                   <button type="submit" class="btn primary">Сохранить</button>
-                  <button id="send-review-btn" type="button" class="btn secondary">Отправить на проверку</button>
-                  <button id="accept-btn" type="button" class="btn secondary">Принять замер</button>
                 </div>
                 <details id="technical-actions" class="technical-actions hidden">
                   <summary>Технические действия</summary>
@@ -380,7 +373,7 @@
       </main>
     </div>
     <script src="./offline-db.js?v=20260517-v4"></script>
-    <script src="./app.js?v=20260524-v39"></script>
+    <script src="./app.js?v=20260603-ready-workflow"></script>
     <script src="./photo-preview.js?v=20260515-v14"></script>
     <script src="./details-enhance.js?v=20260515-v14"></script>
     <script src="./scheme-sketch.js?v=20260506-disabled"></script>

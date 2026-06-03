@@ -551,7 +551,7 @@ function buildMeasurementPayloadFromOfflineDraft(draft, clientId) {
   return {
     ...measurement,
     number,
-    status: measurement.status === "Офлайн-черновик" ? "Черновик" : (measurement.status || "Черновик"),
+    status: "Готовый замер",
     client_id: clientId,
     created_by: measurement.created_by || state.user?.id,
     measurer_id: measurement.measurer_id || state.user?.id,
@@ -1507,7 +1507,7 @@ function getFormData() {
       created_by: state.user?.id,
     },
     measurement: {
-      status: fd.get("status") || "Черновик",
+      status: isLocalOfflineDraft() ? "Офлайн-черновик" : (fd.get("status") || "Готовый замер"),
       object_type: "Частный дом",
       object_stage: fd.get("object_stage") || "Черновая",
       site_situation: fd.get("site_situation") || "Пустой проём",
@@ -1687,10 +1687,10 @@ function clearTrashSelection() {
 
 function renderStats() {
   const visible = state.measurements.filter((m) => !m.is_deleted);
-  $("#stat-drafts").textContent = visible.filter((m) => m.status === "Черновик").length;
-  $("#stat-review").textContent = visible.filter((m) => m.status === "На проверке").length;
-  $("#stat-ready").textContent = visible.filter((m) => m.status === "Готовый замер").length;
-  $("#stat-archive").textContent = visible.filter((m) => m.status === "Архив" || m.is_archived).length;
+  const ready = visible.filter((m) => m.status === "Готовый замер").length;
+  const archive = visible.filter((m) => m.status === "Архив" || m.is_archived).length;
+  if ($("#stat-ready")) $("#stat-ready").textContent = ready;
+  if ($("#stat-archive")) $("#stat-archive").textContent = archive;
 }
 
 function renderList() {
@@ -1774,7 +1774,7 @@ function newMeasurement(mode = MEASUREMENT_MODE_DEFAULT) {
   const normalizedMode = normalizeMeasurementMode(mode);
   state.selected = {
     number: createMeasurementNumber(),
-    status: "Черновик",
+    status: "Готовый замер",
     clients: {},
     site_situation: "Пустой проём",
     opening_type: "Прямой",
@@ -1838,7 +1838,7 @@ function fillForm(m) {
   form.has_electricity.checked = Boolean(m.has_electricity);
   form.has_ventilation.checked = Boolean(m.has_ventilation);
   $("#form-title").textContent = isLocalOfflineDraft(m) ? `Офлайн-черновик ${m.number || "TEMP"}` : (m.number || "Новый замер");
-  $("#form-status").textContent = isLocalOfflineDraft(m) ? "local_only" : (m.status || "Черновик");
+  $("#form-status").textContent = isLocalOfflineDraft(m) ? "local_only" : (m.status || "Готовый замер");
   const formMeasurer = $("#form-measurer");
   const measurerName = measurementMeasurerName(m);
   if (formMeasurer) {
@@ -1989,16 +1989,9 @@ function getRequiredMeasurementErrors() {
 }
 
 function requireWorkflowReady(actionLabel = "принятием замера") {
-  const clientErrors = getRequiredClientErrors({ allowAutoName: actionLabel === "принятием замера" });
-  const measurementErrors = getRequiredMeasurementErrors();
-  const errors = [...clientErrors, ...measurementErrors];
-  if (!errors.length) return true;
-  const message = actionLabel === "принятием замера"
-    ? `Нельзя принять замер. Заполните: ${errors.join(", ")}.`
-    : `Нельзя отправить замер. Заполните: ${errors.join(", ")}.`;
-  setMessage($("#form-message"), message, "error");
-  activateTab(clientErrors.length ? "general" : "sizes");
-  return false;
+  void actionLabel;
+  renderChecks();
+  return true;
 }
 
 async function saveMeasurement(options = {}) {
@@ -2012,6 +2005,7 @@ async function saveMeasurement(options = {}) {
   setMessage($("#form-message"), "Сохраняю...");
   if (options.requireClientFields && !requireClientBeforeWorkflow(options.actionLabel || "отправкой на проверку")) return null;
   const { client, measurement } = getFormData();
+  measurement.status = "Готовый замер";
   let clientId = state.selected?.client_id;
   if (clientId) {
     const { error } = await supabaseClient.from("clients").update(client).eq("id", clientId);
@@ -2619,7 +2613,6 @@ function enhanceMainPreviewSvg(svgText) {
 
 function previewClarificationMarkup(m) {
   const notes = [];
-  if (m.status === "Нужны уточнения") notes.push("Статус замера требует уточнения.");
   if (!m.drawing_svg) notes.push("Нет сохранённой схемы/SVG.");
   if (!selectedPhotos().length) notes.push("Фото не добавлены.");
   return notes.length
@@ -2642,7 +2635,7 @@ function renderPreview() {
       <div>
         <div class="eyebrow">Чистый просмотр</div>
         <h2>${previewValue(m.number, "Замер")}</h2>
-        <span class="badge">${previewValue(m.status || "Черновик")}</span>
+        <span class="badge">${previewValue(m.status || "Готовый замер")}</span>
       </div>
       <div class="preview-actions">
         <button type="button" class="btn secondary" data-open-measurements>Назад</button>
@@ -3272,27 +3265,24 @@ function bind() {
     const id = event.target.closest("[data-delete-photo-id]")?.dataset.deletePhotoId;
     if (id) deletePhoto(id).catch((e) => setMessage($("#form-message"), userFacingError(e), "error"));
   });
-  $("#send-review-btn").addEventListener("click", async () => {
+  $("#send-review-btn")?.addEventListener("click", async () => {
     try {
       if (isLocalOfflineDraft()) { setMessage($("#form-message"), offlineDraftMessage(), "error"); return; }
-      const saved = await saveMeasurement({ requireClientFields: true, actionLabel: "отправкой на проверку" });
+      const saved = await saveMeasurement();
       if (!saved) return;
-      if (!requireWorkflowReady("отправкой на проверку")) return;
-      await setStatus("На проверке", {}, { requireClientFields: true, actionLabel: "отправкой на проверку" });
-      setMessage($("#form-message"), "Замер отправлен на проверку.", "ok");
+      renderChecks();
+      setMessage($("#form-message"), "Замер сохранён как готовый.", "ok");
     } catch (e) {
       setMessage($("#form-message"), userFacingError(e), "error");
     }
   });
-  $("#accept-btn").addEventListener("click", async () => {
+  $("#accept-btn")?.addEventListener("click", async () => {
     try {
       if (isLocalOfflineDraft()) { setMessage($("#form-message"), offlineDraftMessage(), "error"); return; }
-      if (!canAcceptMeasurements()) { setMessage($("#form-message"), "У вашей роли нет права принимать замер. Отправьте его на проверку.", "error"); return; }
-      const saved = await saveMeasurement({ requireClientFields: true, actionLabel: "принятием замера" });
+      const saved = await saveMeasurement();
       if (!saved) return;
-      if (!requireWorkflowReady("принятием замера")) return;
-      await setStatus("Готовый замер", { checked_by: state.user.id, checked_at: new Date().toISOString() });
-      setMessage($("#form-message"), "Замер принят и сохранён.", "ok");
+      renderChecks();
+      setMessage($("#form-message"), "Замер сохранён как готовый.", "ok");
     } catch (e) {
       setMessage($("#form-message"), userFacingError(e), "error");
     }

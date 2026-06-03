@@ -11,7 +11,7 @@ const PHOTO_DRAFT_SAVE_REQUIRED_MESSAGE = "Фото не загружено: с�
 const PHOTO_UPLOAD_OFFLINE_MESSAGE = "Фото нельзя загрузить без интернета. В TEMP-черновике фото сохраняются в телефоне и отправятся при синхронизации.";
 const OFFLINE_SYNC_UNAVAILABLE_MESSAGE = "Появится интернет — можно будет синхронизировать.";
 const OFFLINE_SYNC_ERROR_MESSAGE = "Не удалось синхронизировать. Черновик сохранён в телефоне, попробуйте ещё раз.";
-const OFFLINE_SHELL_CACHE_NAME = "tekstura-offline-shell-v19-app-shell";
+const OFFLINE_SHELL_CACHE_NAME = "tekstura-offline-shell-v20-app-shell";
 const SUPABASE_CONNECTING_MESSAGE = "Подключаюсь к Supabase...";
 const SUPABASE_REFRESHING_MESSAGE = "Обновляю данные...";
 const PERMANENT_DELETE_PASSWORD = "del2525";
@@ -172,7 +172,30 @@ function showOfflineState(message = OFFLINE_STARTUP_MESSAGE) {
 async function buildOfflineHealthcheckReport() {
   const swReg = ("serviceWorker" in navigator) ? await navigator.serviceWorker.getRegistration() : null;
   const swState = swReg?.active ? "active" : swReg?.waiting ? "waiting" : swReg?.installing ? "installing" : "нет";
-  const shellKeys = ["./index.html", "/index.html", "./", "/", new URL("/", location.origin).href, new URL("/index.html", location.origin).href];
+  let manifestInfo = "не прочитан";
+  try {
+    const manifestResponse = await fetch("./manifest.webmanifest", { cache: "no-store" });
+    if (manifestResponse.ok) {
+      const manifest = await manifestResponse.json();
+      manifestInfo = `start_url=${manifest.start_url || "нет"}, scope=${manifest.scope || "нет"}, display=${manifest.display || "нет"}, id=${manifest.id || "нет"}`;
+    } else {
+      manifestInfo = `HTTP ${manifestResponse.status}`;
+    }
+  } catch (error) {
+    manifestInfo = userFacingError(error);
+  }
+  const registrationScope = swReg?.scope || "";
+  const shellKeys = [
+    "./",
+    "./index.html",
+    "/",
+    "/index.html",
+    registrationScope,
+    registrationScope ? new URL("./", registrationScope).href : "",
+    registrationScope ? new URL("./index.html", registrationScope).href : "",
+    new URL("/", location.origin).href,
+    new URL("/index.html", location.origin).href,
+  ].filter(Boolean);
   const foundShellKeys = [];
   let cacheNames = [];
   let shellCacheReady = false;
@@ -180,7 +203,7 @@ async function buildOfflineHealthcheckReport() {
     cacheNames = await caches.keys();
     const cache = await caches.open(OFFLINE_SHELL_CACHE_NAME);
     for (const url of shellKeys) {
-      if (await cache.match(url)) {
+      if (await cache.match(url, { ignoreSearch: true })) {
         foundShellKeys.push(url);
         shellCacheReady = true;
       }
@@ -191,6 +214,9 @@ async function buildOfflineHealthcheckReport() {
   return [
     `Expected cache: ${OFFLINE_SHELL_CACHE_NAME}`,
     `Caches: ${cacheNames.length ? cacheNames.join(", ") : "нет"}`,
+    `Manifest: ${manifestInfo}`,
+    `Display mode standalone: ${window.matchMedia?.("(display-mode: standalone)")?.matches ? "да" : "нет"}`,
+    `iOS navigator.standalone: ${navigator.standalone ? "да" : "нет"}`,
     `Страница контролируется service worker: ${isControlled ? "да" : "нет"}`,
     `Service Worker: ${swState}`,
     `Registration scope: ${swReg?.scope || "нет"}`,

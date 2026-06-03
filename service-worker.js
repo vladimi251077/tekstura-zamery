@@ -1,17 +1,23 @@
-const CACHE_VERSION = "tekstura-offline-shell-v19";
+const CACHE_VERSION = "tekstura-offline-shell-v20";
 const APP_SHELL_CACHE = `${CACHE_VERSION}-app-shell`;
-
-const APP_SHELL_URLS = [
-  "/",
-  "/index.html",
+const IOS_START_URLS = [
   "./",
   "./index.html",
+  "/",
+  "/index.html",
+  self.registration.scope,
+  new URL("./", self.registration.scope).href,
+  new URL("./index.html", self.registration.scope).href,
+];
+
+const APP_SHELL_URLS = [
+  ...IOS_START_URLS,
   "/offline-test.html",
   "./offline-test.html",
   "/styles.css?v=20260518-trash-bulk",
   "./styles.css?v=20260518-trash-bulk",
-  "/app.js?v=20260603-ios-offline-hotfix",
-  "./app.js?v=20260603-ios-offline-hotfix",
+  "/app.js?v=20260603-ios-pwa-cold-start-hotfix",
+  "./app.js?v=20260603-ios-pwa-cold-start-hotfix",
   "/offline-db.js?v=20260517-v4",
   "./offline-db.js?v=20260517-v4",
   "/photo-preview.js?v=20260515-v14",
@@ -25,16 +31,13 @@ const APP_SHELL_URLS = [
 ];
 
 const REQUIRED_APP_SHELL_URLS = new Set([
-  "/",
-  "/index.html",
-  "./",
-  "./index.html",
+  ...IOS_START_URLS,
   "/offline-test.html",
   "./offline-test.html",
   "/styles.css?v=20260518-trash-bulk",
   "./styles.css?v=20260518-trash-bulk",
-  "/app.js?v=20260603-ios-offline-hotfix",
-  "./app.js?v=20260603-ios-offline-hotfix",
+  "/app.js?v=20260603-ios-pwa-cold-start-hotfix",
+  "./app.js?v=20260603-ios-pwa-cold-start-hotfix",
   "/offline-db.js?v=20260517-v4",
   "./offline-db.js?v=20260517-v4",
   "/manifest.webmanifest",
@@ -44,10 +47,13 @@ const REQUIRED_APP_SHELL_URLS = new Set([
 ]);
 
 const NAVIGATION_FALLBACK_URLS = [
-  "/",
-  "/index.html",
   "./",
   "./index.html",
+  "/",
+  "/index.html",
+  self.registration.scope,
+  new URL("./", self.registration.scope).href,
+  new URL("./index.html", self.registration.scope).href,
   new URL("/", self.location.origin).href,
   new URL("/index.html", self.location.origin).href,
 ];
@@ -80,8 +86,8 @@ function offlineFallbackResponse() {
     <title>Tekstura Замеры — офлайн</title>
   </head>
   <body>
-    <h1>Офлайн-кэш ещё не подготовлен</h1>
-    <p>Откройте приложение с интернетом, нажмите «Обновить» 5 раз и проверьте офлайн-доступ.</p>
+    <h1>Tekstura Замеры</h1>
+    <p>Офлайн-кэш не подготовлен. Откройте приложение с интернетом и нажмите Обновить.</p>
   </body>
 </html>`, {
     headers: { "Content-Type": "text/html; charset=utf-8" },
@@ -98,9 +104,20 @@ async function cacheShellUrl(cache, url) {
   return response;
 }
 
+async function cacheIosStartUrls(cache) {
+  const indexRequest = new Request(new URL("./index.html", self.registration.scope).href, { cache: "reload" });
+  const response = await fetch(indexRequest);
+  if (!response.ok) throw new Error(`HTTP ${response.status} ${indexRequest.url}`);
+  for (const url of IOS_START_URLS) {
+    await cache.put(url, response.clone());
+  }
+}
+
 async function cachedNavigationFallback(cache, request) {
   const direct = await cache.match(request, { ignoreSearch: true });
   if (direct) return direct;
+  const directUrl = await cache.match(request.url, { ignoreSearch: true });
+  if (directUrl) return directUrl;
   for (const url of NAVIGATION_FALLBACK_URLS) {
     const cached = await cache.match(url, { ignoreSearch: true });
     if (cached) return cached;
@@ -149,6 +166,7 @@ self.addEventListener("install", (event) => {
   event.waitUntil((async () => {
     await self.skipWaiting();
     const cache = await caches.open(APP_SHELL_CACHE);
+    await cacheIosStartUrls(cache);
     for (const url of APP_SHELL_URLS) {
       try {
         await cacheShellUrl(cache, url);

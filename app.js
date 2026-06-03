@@ -11,7 +11,7 @@ const PHOTO_DRAFT_SAVE_REQUIRED_MESSAGE = "Фото не загружено: с�
 const PHOTO_UPLOAD_OFFLINE_MESSAGE = "Фото нельзя загрузить без интернета. В TEMP-черновике фото сохраняются в телефоне и отправятся при синхронизации.";
 const OFFLINE_SYNC_UNAVAILABLE_MESSAGE = "Появится интернет — можно будет синхронизировать.";
 const OFFLINE_SYNC_ERROR_MESSAGE = "Не удалось синхронизировать. Черновик сохранён в телефоне, попробуйте ещё раз.";
-const OFFLINE_SHELL_CACHE_NAME = "tekstura-offline-shell-v18-app-shell";
+const OFFLINE_SHELL_CACHE_NAME = "tekstura-offline-shell-v19-app-shell";
 const SUPABASE_CONNECTING_MESSAGE = "Подключаюсь к Supabase...";
 const SUPABASE_REFRESHING_MESSAGE = "Обновляю данные...";
 const PERMANENT_DELETE_PASSWORD = "del2525";
@@ -54,8 +54,28 @@ function bindNetworkIndicator() {
 
 function registerServiceWorker() {
   if (!("serviceWorker" in navigator) || !window.isSecureContext) return;
+  let refreshedByControllerChange = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    console.log("[SW] controllerchange", { controller: Boolean(navigator.serviceWorker.controller) });
+    if (refreshedByControllerChange) return;
+    refreshedByControllerChange = true;
+    window.location.reload();
+  });
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("./service-worker.js")
+      .then((registration) => {
+        console.log("[SW] registered", {
+          scope: registration.scope,
+          controller: Boolean(navigator.serviceWorker.controller),
+          active: registration.active?.state || "none",
+          waiting: registration.waiting?.state || "none",
+          installing: registration.installing?.state || "none",
+        });
+        if (registration.waiting) {
+          registration.waiting.postMessage({ type: "SKIP_WAITING" });
+        }
+        return registration.update();
+      })
       .catch((error) => console.warn("Service worker was not registered", error));
   });
 }
@@ -152,24 +172,40 @@ function showOfflineState(message = OFFLINE_STARTUP_MESSAGE) {
 async function buildOfflineHealthcheckReport() {
   const swReg = ("serviceWorker" in navigator) ? await navigator.serviceWorker.getRegistration() : null;
   const swState = swReg?.active ? "active" : swReg?.waiting ? "waiting" : swReg?.installing ? "installing" : "нет";
+  const shellKeys = ["./index.html", "/index.html", "./", "/", new URL("/", location.origin).href, new URL("/index.html", location.origin).href];
+  const foundShellKeys = [];
+  let cacheNames = [];
   let shellCacheReady = false;
   if ("caches" in window) {
+    cacheNames = await caches.keys();
     const cache = await caches.open(OFFLINE_SHELL_CACHE_NAME);
-    for (const url of ["./index.html", "/index.html", "./", "/"]) {
+    for (const url of shellKeys) {
       if (await cache.match(url)) {
+        foundShellKeys.push(url);
         shellCacheReady = true;
-        break;
       }
     }
   }
   const localTempCount = await window.TeksturaOfflineDB?.countOfflineDrafts?.() || 0;
+  const isControlled = Boolean(navigator.serviceWorker?.controller);
   return [
+    `Expected cache: ${OFFLINE_SHELL_CACHE_NAME}`,
+    `Caches: ${cacheNames.length ? cacheNames.join(", ") : "нет"}`,
+    `Страница контролируется service worker: ${isControlled ? "да" : "нет"}`,
     `Service Worker: ${swState}`,
+    `Registration scope: ${swReg?.scope || "нет"}`,
+    `Active state: ${swReg?.active?.state || "нет"}`,
+    `Waiting state: ${swReg?.waiting?.state || "нет"}`,
+    `Installing state: ${swReg?.installing?.state || "нет"}`,
     `Cache shell: ${shellCacheReady ? "есть" : "нет"}`,
+    `Shell keys: ${foundShellKeys.length ? foundShellKeys.join(", ") : "нет"}`,
+    `Location: ${location.href}`,
+    `Origin: ${location.origin}`,
     `Сеть: ${navigator.onLine ? "online" : "offline"}`,
     `Локальные TEMP-черновики: ${localTempCount}`,
+    isControlled ? "" : "Откройте сайт онлайн и нажмите Обновить ещё раз — iPhone ещё не передал страницу под service worker.",
     shellCacheReady ? "Офлайн-режим готов" : "Офлайн-режим ещё не подготовлен",
-  ].join(" · ");
+  ].filter(Boolean).join(" · ");
 }
 
 

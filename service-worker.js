@@ -1,11 +1,11 @@
-const CACHE_VERSION = "tekstura-offline-shell-v15";
+const CACHE_VERSION = "tekstura-offline-shell-v16";
 const APP_SHELL_CACHE = `${CACHE_VERSION}-app-shell`;
 
 const APP_SHELL_URLS = [
   "./",
   "./index.html",
   "./styles.css?v=20260518-trash-bulk",
-  "./app.js?v=20260603-ready-workflow",
+  "./app.js?v=20260603-audit-healthcheck",
   "./offline-db.js?v=20260517-v4",
   "./photo-preview.js?v=20260515-v14",
   "./details-enhance.js?v=20260515-v14",
@@ -18,7 +18,7 @@ const APP_SHELL_URLS = [
 const REQUIRED_APP_SHELL_URLS = new Set([
   "./",
   "./index.html",
-  "./app.js?v=20260603-ready-workflow",
+  "./app.js?v=20260603-audit-healthcheck",
   "./styles.css?v=20260518-trash-bulk",
   "./offline-db.js?v=20260517-v4",
   "./photo-preview.js?v=20260515-v14",

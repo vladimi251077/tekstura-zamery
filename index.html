@@ -14,9 +14,73 @@
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" />
     <link rel="stylesheet" href="./styles.css?v=20260518-trash-bulk" />
+    <style>
+      .boot-fallback {
+        background: #f8fafc;
+        color: #111827;
+        display: block;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        inset: 0;
+        line-height: 1.5;
+        padding: 28px 20px;
+        position: fixed;
+        z-index: 9999;
+      }
+      .boot-fallback h1 {
+        color: #071a49;
+        font-size: 28px;
+        margin: 0 0 12px;
+      }
+      .boot-fallback p {
+        font-size: 16px;
+        margin: 10px 0;
+        max-width: 620px;
+      }
+      .boot-fallback-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 18px;
+      }
+      .boot-fallback button {
+        background: #2563eb;
+        border: 0;
+        border-radius: 8px;
+        color: #fff;
+        cursor: pointer;
+        font-size: 15px;
+        font-weight: 700;
+        padding: 12px 14px;
+      }
+      .boot-fallback button.secondary {
+        background: #e5e7eb;
+        color: #111827;
+      }
+      .boot-fallback details {
+        margin-top: 18px;
+        max-width: 680px;
+      }
+      .boot-fallback summary {
+        cursor: pointer;
+        font-weight: 700;
+      }
+    </style>
     <script src="./vendor/supabase-js.js"></script>
   </head>
   <body>
+    <div id="boot-fallback" class="boot-fallback">
+      <h1>Tekstura Замеры</h1>
+      <p>Загрузка приложения...</p>
+      <p id="boot-fallback-message">Если экран не меняется, откройте приложение с интернетом и нажмите Обновить.</p>
+      <div class="boot-fallback-actions">
+        <button type="button" onclick="location.reload()">Обновить</button>
+        <button type="button" class="secondary" onclick="location.href='./offline-test.html'">Открыть offline-test</button>
+      </div>
+      <details>
+        <summary>Показать инструкцию</summary>
+        <p>Включите интернет, откройте приложение снова и нажмите «Обновить». Если ошибка повторяется, очистите данные сайта Tekstura в Safari и добавьте приложение на экран Домой заново.</p>
+      </details>
+    </div>
     <div id="app">
       <header class="topbar">
         <div>
@@ -373,7 +437,27 @@
       </main>
     </div>
     <script src="./offline-db.js?v=20260517-v4"></script>
-    <script src="./app.js?v=20260604-offline-white-screen-fix"></script>
+    <script>
+      window.__TEKSTURA_BOOT_OK__ = false;
+      window.addEventListener("error", function(event) {
+        var box = document.getElementById("boot-fallback");
+        var msg = document.getElementById("boot-fallback-message");
+        if (box) box.style.display = "block";
+        if (msg) {
+          msg.textContent = "Ошибка запуска приложения: " + (event.message || "неизвестная ошибка") + ". Включите интернет, нажмите Обновить или очистите данные сайта.";
+        }
+      });
+      window.addEventListener("unhandledrejection", function(event) {
+        var box = document.getElementById("boot-fallback");
+        var msg = document.getElementById("boot-fallback-message");
+        if (box) box.style.display = "block";
+        if (msg) {
+          var reason = event.reason && (event.reason.message || String(event.reason));
+          msg.textContent = "Ошибка запуска приложения: " + (reason || "неизвестная ошибка") + ". Включите интернет, нажмите Обновить или очистите данные сайта.";
+        }
+      });
+    </script>
+    <script src="./app.js?v=20260604-boot-error-screen"></script>
     <script src="./photo-preview.js?v=20260515-v14"></script>
     <script src="./details-enhance.js?v=20260515-v14"></script>
     <script src="./scheme-sketch.js?v=20260506-disabled"></script>

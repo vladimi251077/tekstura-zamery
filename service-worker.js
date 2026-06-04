@@ -1,5 +1,9 @@
-const CACHE_VERSION = "tekstura-offline-shell-v26";
+const CACHE_VERSION = "tekstura-offline-shell-v27";
 const APP_SHELL_CACHE = `${CACHE_VERSION}-app-shell`;
+const OFFLINE_FALLBACK_URLS = [
+  "/offline-fallback.html",
+  "./offline-fallback.html",
+];
 const IOS_INDEX_URLS = [
   "./index.html",
   "/index.html",
@@ -26,18 +30,18 @@ const NAVIGATION_FALLBACK_URLS = [
   new URL("./index.html", self.registration.scope).href,
   new URL("/index.html", self.location.origin).href,
   new URL("/", self.location.origin).href,
-  "/offline-fallback.html",
-  "./offline-fallback.html",
+  ...OFFLINE_FALLBACK_URLS,
 ];
 
 const APP_SHELL_URLS = [
   ...IOS_START_URLS,
+  ...OFFLINE_FALLBACK_URLS,
   "/offline-test.html",
   "./offline-test.html",
   "/styles.css?v=20260518-trash-bulk",
   "./styles.css?v=20260518-trash-bulk",
-  "/app.js?v=20260604-offline-white-screen-fix",
-  "./app.js?v=20260604-offline-white-screen-fix",
+  "/app.js?v=20260604-boot-error-screen",
+  "./app.js?v=20260604-boot-error-screen",
   "/offline-db.js?v=20260517-v4",
   "./offline-db.js?v=20260517-v4",
   "/vendor/supabase-js.js",
@@ -56,12 +60,13 @@ const APP_SHELL_URLS = [
 
 const REQUIRED_APP_SHELL_URLS = new Set([
   ...IOS_START_URLS,
+  ...OFFLINE_FALLBACK_URLS,
   "/offline-test.html",
   "./offline-test.html",
   "/styles.css?v=20260518-trash-bulk",
   "./styles.css?v=20260518-trash-bulk",
-  "/app.js?v=20260604-offline-white-screen-fix",
-  "./app.js?v=20260604-offline-white-screen-fix",
+  "/app.js?v=20260604-boot-error-screen",
+  "./app.js?v=20260604-boot-error-screen",
   "/offline-db.js?v=20260517-v4",
   "./offline-db.js?v=20260517-v4",
   "/vendor/supabase-js.js",
@@ -112,6 +117,10 @@ function offlineFallbackResponse(status = 503) {
 }
 
 async function cacheShellUrl(cache, url) {
+  if (OFFLINE_FALLBACK_URLS.includes(url)) {
+    await cache.put(url, offlineFallbackResponse(200));
+    return null;
+  }
   const request = new Request(url, { cache: "reload" });
   const response = await fetch(request);
   if (!response.ok) throw new Error(`HTTP ${response.status} ${url}`);

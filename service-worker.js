@@ -1,4 +1,4 @@
-const CACHE_VERSION = "tekstura-offline-shell-v24";
+const CACHE_VERSION = "tekstura-offline-shell-v25";
 const APP_SHELL_CACHE = `${CACHE_VERSION}-app-shell`;
 const IOS_INDEX_URLS = [
   "./index.html",
@@ -10,22 +10,12 @@ const IOS_INDEX_URLS = [
 const IOS_ROOT_URLS = [
   "./",
   "/",
-  self.registration.scope,
-  new URL("./", self.registration.scope).href,
   new URL("/", self.location.origin).href,
-];
-
-const IOS_OFFLINE_START_URLS = [
-  "./offline-start.html",
-  "/offline-start.html",
-  new URL("./offline-start.html", self.registration.scope).href,
-  new URL("/offline-start.html", self.location.origin).href,
 ];
 
 const IOS_START_URLS = [
   ...IOS_INDEX_URLS,
   ...IOS_ROOT_URLS,
-  ...IOS_OFFLINE_START_URLS,
 ];
 
 const NAVIGATION_FALLBACK_URLS = [
@@ -35,10 +25,7 @@ const NAVIGATION_FALLBACK_URLS = [
   "/",
   new URL("./index.html", self.registration.scope).href,
   new URL("/index.html", self.location.origin).href,
-  self.registration.scope,
-  new URL("./", self.registration.scope).href,
   new URL("/", self.location.origin).href,
-  ...IOS_OFFLINE_START_URLS,
 ];
 
 const APP_SHELL_URLS = [
@@ -47,8 +34,8 @@ const APP_SHELL_URLS = [
   "./offline-test.html",
   "/styles.css?v=20260518-trash-bulk",
   "./styles.css?v=20260518-trash-bulk",
-  "/app.js?v=20260604-local-supabase-sdk",
-  "./app.js?v=20260604-local-supabase-sdk",
+  "/app.js?v=20260604-remove-offline-start",
+  "./app.js?v=20260604-remove-offline-start",
   "/offline-db.js?v=20260517-v4",
   "./offline-db.js?v=20260517-v4",
   "/vendor/supabase-js.js",
@@ -71,8 +58,8 @@ const REQUIRED_APP_SHELL_URLS = new Set([
   "./offline-test.html",
   "/styles.css?v=20260518-trash-bulk",
   "./styles.css?v=20260518-trash-bulk",
-  "/app.js?v=20260604-local-supabase-sdk",
-  "./app.js?v=20260604-local-supabase-sdk",
+  "/app.js?v=20260604-remove-offline-start",
+  "./app.js?v=20260604-remove-offline-start",
   "/offline-db.js?v=20260517-v4",
   "./offline-db.js?v=20260517-v4",
   "/vendor/supabase-js.js",
@@ -138,20 +125,11 @@ async function cacheIosStartUrls(cache) {
   for (const url of [...IOS_INDEX_URLS, ...IOS_ROOT_URLS]) {
     await cache.put(url, indexResponse.clone());
   }
-
-  const offlineStartRequest = new Request(new URL("./offline-start.html", self.registration.scope).href, { cache: "reload" });
-  const offlineStartResponse = await fetch(offlineStartRequest);
-  if (!offlineStartResponse.ok) throw new Error(`HTTP ${offlineStartResponse.status} ${offlineStartRequest.url}`);
-  for (const url of IOS_OFFLINE_START_URLS) {
-    await cache.put(url, offlineStartResponse.clone());
-  }
 }
 
 async function cachedNavigationFallback(cache, request) {
   const direct = await cache.match(request, { ignoreSearch: true });
   if (direct) return direct;
-  const directUrl = await cache.match(request.url, { ignoreSearch: true });
-  if (directUrl) return directUrl;
   for (const url of NAVIGATION_FALLBACK_URLS) {
     const cached = await cache.match(url, { ignoreSearch: true });
     if (cached) return cached;

@@ -1,4 +1,4 @@
-const CACHE_VERSION = "tekstura-offline-shell-v23";
+const CACHE_VERSION = "tekstura-offline-shell-v24";
 const APP_SHELL_CACHE = `${CACHE_VERSION}-app-shell`;
 const IOS_INDEX_URLS = [
   "./index.html",
@@ -47,10 +47,12 @@ const APP_SHELL_URLS = [
   "./offline-test.html",
   "/styles.css?v=20260518-trash-bulk",
   "./styles.css?v=20260518-trash-bulk",
-  "/app.js?v=20260604-ios-index-start-hotfix",
-  "./app.js?v=20260604-ios-index-start-hotfix",
+  "/app.js?v=20260604-local-supabase-sdk",
+  "./app.js?v=20260604-local-supabase-sdk",
   "/offline-db.js?v=20260517-v4",
   "./offline-db.js?v=20260517-v4",
+  "/vendor/supabase-js.js",
+  "./vendor/supabase-js.js",
   "/photo-preview.js?v=20260515-v14",
   "/details-enhance.js?v=20260515-v14",
   "/scheme-sketch.js?v=20260506-disabled",
@@ -69,10 +71,12 @@ const REQUIRED_APP_SHELL_URLS = new Set([
   "./offline-test.html",
   "/styles.css?v=20260518-trash-bulk",
   "./styles.css?v=20260518-trash-bulk",
-  "/app.js?v=20260604-ios-index-start-hotfix",
-  "./app.js?v=20260604-ios-index-start-hotfix",
+  "/app.js?v=20260604-local-supabase-sdk",
+  "./app.js?v=20260604-local-supabase-sdk",
   "/offline-db.js?v=20260517-v4",
   "./offline-db.js?v=20260517-v4",
+  "/vendor/supabase-js.js",
+  "./vendor/supabase-js.js",
   "/manifest.webmanifest",
   "./manifest.webmanifest",
   "/icon-192.png",

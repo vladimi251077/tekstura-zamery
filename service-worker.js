@@ -1,12 +1,5 @@
-const CACHE_VERSION = "tekstura-offline-shell-v21";
+const CACHE_VERSION = "tekstura-offline-shell-v23";
 const APP_SHELL_CACHE = `${CACHE_VERSION}-app-shell`;
-const IOS_OFFLINE_START_URLS = [
-  "./offline-start.html",
-  "/offline-start.html",
-  new URL("./offline-start.html", self.registration.scope).href,
-  new URL("/offline-start.html", self.location.origin).href,
-];
-
 const IOS_INDEX_URLS = [
   "./index.html",
   "/index.html",
@@ -22,10 +15,30 @@ const IOS_ROOT_URLS = [
   new URL("/", self.location.origin).href,
 ];
 
+const IOS_OFFLINE_START_URLS = [
+  "./offline-start.html",
+  "/offline-start.html",
+  new URL("./offline-start.html", self.registration.scope).href,
+  new URL("/offline-start.html", self.location.origin).href,
+];
+
 const IOS_START_URLS = [
-  ...IOS_OFFLINE_START_URLS,
   ...IOS_INDEX_URLS,
   ...IOS_ROOT_URLS,
+  ...IOS_OFFLINE_START_URLS,
+];
+
+const NAVIGATION_FALLBACK_URLS = [
+  "./index.html",
+  "/index.html",
+  "./",
+  "/",
+  new URL("./index.html", self.registration.scope).href,
+  new URL("/index.html", self.location.origin).href,
+  self.registration.scope,
+  new URL("./", self.registration.scope).href,
+  new URL("/", self.location.origin).href,
+  ...IOS_OFFLINE_START_URLS,
 ];
 
 const APP_SHELL_URLS = [
@@ -34,8 +47,8 @@ const APP_SHELL_URLS = [
   "./offline-test.html",
   "/styles.css?v=20260518-trash-bulk",
   "./styles.css?v=20260518-trash-bulk",
-  "/app.js?v=20260604-ios-offline-start",
-  "./app.js?v=20260604-ios-offline-start",
+  "/app.js?v=20260604-ios-index-start-hotfix",
+  "./app.js?v=20260604-ios-index-start-hotfix",
   "/offline-db.js?v=20260517-v4",
   "./offline-db.js?v=20260517-v4",
   "/photo-preview.js?v=20260515-v14",
@@ -45,7 +58,9 @@ const APP_SHELL_URLS = [
   "/manifest.webmanifest",
   "./manifest.webmanifest",
   "/icon-192.png",
+  "./icon-192.png",
   "/icon-512.png",
+  "./icon-512.png",
 ];
 
 const REQUIRED_APP_SHELL_URLS = new Set([
@@ -54,21 +69,17 @@ const REQUIRED_APP_SHELL_URLS = new Set([
   "./offline-test.html",
   "/styles.css?v=20260518-trash-bulk",
   "./styles.css?v=20260518-trash-bulk",
-  "/app.js?v=20260604-ios-offline-start",
-  "./app.js?v=20260604-ios-offline-start",
+  "/app.js?v=20260604-ios-index-start-hotfix",
+  "./app.js?v=20260604-ios-index-start-hotfix",
   "/offline-db.js?v=20260517-v4",
   "./offline-db.js?v=20260517-v4",
   "/manifest.webmanifest",
   "./manifest.webmanifest",
   "/icon-192.png",
+  "./icon-192.png",
   "/icon-512.png",
+  "./icon-512.png",
 ]);
-
-const NAVIGATION_FALLBACK_URLS = [
-  ...IOS_OFFLINE_START_URLS,
-  ...IOS_INDEX_URLS,
-  ...IOS_ROOT_URLS,
-];
 
 const LOCAL_CACHEABLE_DESTINATIONS = new Set(["document", "script", "style", "manifest", "image"]);
 const CACHE_FIRST_DESTINATIONS = new Set(["manifest", "image"]);
@@ -117,18 +128,18 @@ async function cacheShellUrl(cache, url) {
 }
 
 async function cacheIosStartUrls(cache) {
-  const offlineStartRequest = new Request(new URL("./offline-start.html", self.registration.scope).href, { cache: "reload" });
-  const offlineStartResponse = await fetch(offlineStartRequest);
-  if (!offlineStartResponse.ok) throw new Error(`HTTP ${offlineStartResponse.status} ${offlineStartRequest.url}`);
-  for (const url of IOS_OFFLINE_START_URLS) {
-    await cache.put(url, offlineStartResponse.clone());
-  }
-
   const indexRequest = new Request(new URL("./index.html", self.registration.scope).href, { cache: "reload" });
   const indexResponse = await fetch(indexRequest);
   if (!indexResponse.ok) throw new Error(`HTTP ${indexResponse.status} ${indexRequest.url}`);
   for (const url of [...IOS_INDEX_URLS, ...IOS_ROOT_URLS]) {
     await cache.put(url, indexResponse.clone());
+  }
+
+  const offlineStartRequest = new Request(new URL("./offline-start.html", self.registration.scope).href, { cache: "reload" });
+  const offlineStartResponse = await fetch(offlineStartRequest);
+  if (!offlineStartResponse.ok) throw new Error(`HTTP ${offlineStartResponse.status} ${offlineStartRequest.url}`);
+  for (const url of IOS_OFFLINE_START_URLS) {
+    await cache.put(url, offlineStartResponse.clone());
   }
 }
 

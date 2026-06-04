@@ -1,4 +1,4 @@
-const CACHE_VERSION = "tekstura-offline-shell-v25";
+const CACHE_VERSION = "tekstura-offline-shell-v26";
 const APP_SHELL_CACHE = `${CACHE_VERSION}-app-shell`;
 const IOS_INDEX_URLS = [
   "./index.html",
@@ -19,13 +19,15 @@ const IOS_START_URLS = [
 ];
 
 const NAVIGATION_FALLBACK_URLS = [
-  "./index.html",
   "/index.html",
-  "./",
+  "./index.html",
   "/",
+  "./",
   new URL("./index.html", self.registration.scope).href,
   new URL("/index.html", self.location.origin).href,
   new URL("/", self.location.origin).href,
+  "/offline-fallback.html",
+  "./offline-fallback.html",
 ];
 
 const APP_SHELL_URLS = [
@@ -34,8 +36,8 @@ const APP_SHELL_URLS = [
   "./offline-test.html",
   "/styles.css?v=20260518-trash-bulk",
   "./styles.css?v=20260518-trash-bulk",
-  "/app.js?v=20260604-remove-offline-start",
-  "./app.js?v=20260604-remove-offline-start",
+  "/app.js?v=20260604-offline-white-screen-fix",
+  "./app.js?v=20260604-offline-white-screen-fix",
   "/offline-db.js?v=20260517-v4",
   "./offline-db.js?v=20260517-v4",
   "/vendor/supabase-js.js",
@@ -58,8 +60,8 @@ const REQUIRED_APP_SHELL_URLS = new Set([
   "./offline-test.html",
   "/styles.css?v=20260518-trash-bulk",
   "./styles.css?v=20260518-trash-bulk",
-  "/app.js?v=20260604-remove-offline-start",
-  "./app.js?v=20260604-remove-offline-start",
+  "/app.js?v=20260604-offline-white-screen-fix",
+  "./app.js?v=20260604-offline-white-screen-fix",
   "/offline-db.js?v=20260517-v4",
   "./offline-db.js?v=20260517-v4",
   "/vendor/supabase-js.js",
@@ -91,7 +93,7 @@ function isNavigationRequest(request) {
   return request.mode === "navigate" || request.destination === "document" || request.headers.get("accept")?.includes("text/html");
 }
 
-function offlineFallbackResponse() {
+function offlineFallbackResponse(status = 503) {
   return new Response(`<!doctype html>
 <html lang="ru">
   <head>
@@ -101,11 +103,11 @@ function offlineFallbackResponse() {
   </head>
   <body>
     <h1>Tekstura Замеры</h1>
-    <p>Офлайн-кэш не подготовлен. Откройте приложение с интернетом и нажмите Обновить.</p>
+    <p>Приложение Tekstura Замеры открыто офлайн, но кэш оболочки повреждён. Включите интернет и нажмите Обновить.</p>
   </body>
 </html>`, {
     headers: { "Content-Type": "text/html; charset=utf-8" },
-    status: 503,
+    status,
   });
 }
 
@@ -125,6 +127,12 @@ async function cacheIosStartUrls(cache) {
   for (const url of [...IOS_INDEX_URLS, ...IOS_ROOT_URLS]) {
     await cache.put(url, indexResponse.clone());
   }
+}
+
+async function cacheOfflineFallback(cache) {
+  const fallback = offlineFallbackResponse(200);
+  await cache.put("/offline-fallback.html", fallback.clone());
+  await cache.put("./offline-fallback.html", fallback.clone());
 }
 
 async function cachedNavigationFallback(cache, request) {
@@ -178,7 +186,12 @@ self.addEventListener("install", (event) => {
   event.waitUntil((async () => {
     await self.skipWaiting();
     const cache = await caches.open(APP_SHELL_CACHE);
-    await cacheIosStartUrls(cache);
+    await cacheOfflineFallback(cache);
+    try {
+      await cacheIosStartUrls(cache);
+    } catch (error) {
+      console.error("[SW] start URL precache failed", error);
+    }
     for (const url of APP_SHELL_URLS) {
       try {
         await cacheShellUrl(cache, url);
@@ -186,7 +199,6 @@ self.addEventListener("install", (event) => {
         const required = REQUIRED_APP_SHELL_URLS.has(url);
         const level = required ? "error" : "warn";
         console[level](`[SW] precache failed (${required ? "required" : "optional"})`, url, error);
-        if (required) throw error;
       }
     }
   })());

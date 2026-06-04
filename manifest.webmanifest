@@ -1,7 +1,7 @@
 {
   "name": "Tekstura Замеры",
   "short_name": "Замеры",
-  "start_url": "./",
+  "start_url": "./offline-start.html",
   "scope": "./",
   "display": "standalone",
   "background_color": "#f3f6fb",

@@ -1,8 +1,12 @@
-const CACHE_VERSION = "tekstura-offline-shell-v29";
+const CACHE_VERSION = "tekstura-offline-shell-v30";
 const APP_SHELL_CACHE = `${CACHE_VERSION}-app-shell`;
 const OFFLINE_FALLBACK_URLS = [
   "/offline-fallback.html",
   "./offline-fallback.html",
+];
+const OFFLINE_DIAGNOSTICS_URLS = [
+  "/offline-diagnostics.html",
+  "./offline-diagnostics.html",
 ];
 const IOS_INDEX_URLS = [
   "./index.html",
@@ -30,12 +34,14 @@ const NAVIGATION_FALLBACK_URLS = [
   new URL("./index.html", self.registration.scope).href,
   new URL("/index.html", self.location.origin).href,
   new URL("/", self.location.origin).href,
+  ...OFFLINE_DIAGNOSTICS_URLS,
   ...OFFLINE_FALLBACK_URLS,
 ];
 
 const APP_SHELL_URLS = [
   ...IOS_START_URLS,
   ...OFFLINE_FALLBACK_URLS,
+  ...OFFLINE_DIAGNOSTICS_URLS,
   "/offline-test.html",
   "./offline-test.html",
   "/styles.css?v=20260518-trash-bulk",
@@ -61,6 +67,7 @@ const APP_SHELL_URLS = [
 const REQUIRED_APP_SHELL_URLS = new Set([
   ...IOS_START_URLS,
   ...OFFLINE_FALLBACK_URLS,
+  ...OFFLINE_DIAGNOSTICS_URLS,
   "/offline-test.html",
   "./offline-test.html",
   "/styles.css?v=20260518-trash-bulk",

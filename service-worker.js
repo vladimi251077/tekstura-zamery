@@ -1,4 +1,4 @@
-const CACHE_VERSION = "tekstura-offline-shell-v30";
+const CACHE_VERSION = "tekstura-offline-shell-v31";
 const APP_SHELL_CACHE = `${CACHE_VERSION}-app-shell`;
 const OFFLINE_FALLBACK_URLS = [
   "/offline-fallback.html",

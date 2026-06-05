@@ -101,7 +101,7 @@
 
     <script>
       (function() {
-        var EXPECTED_CACHE = "tekstura-offline-shell-v30-app-shell";
+        var EXPECTED_CACHE = "tekstura-offline-shell-v31-app-shell";
         var APP_JS_QUERY = "20260604-runtime-error-fallback-v2";
         var CHECK_KEYS = [
           "/",
@@ -118,6 +118,12 @@
           "./offline-diagnostics.html"
         ];
         var lastReportText = "";
+        var registrationResult = {
+          attempted: false,
+          ok: false,
+          scope: "",
+          error: ""
+        };
 
         function text(value) {
           if (value === true) return "да";
@@ -128,6 +134,40 @@
 
         function stateOf(worker) {
           return worker ? worker.state : "нет";
+        }
+
+        async function registerServiceWorker() {
+          if (!("serviceWorker" in navigator)) {
+            registrationResult = {
+              attempted: false,
+              ok: false,
+              scope: "",
+              error: "serviceWorker не поддерживается"
+            };
+            return null;
+          }
+          if (!window.isSecureContext) {
+            registrationResult = {
+              attempted: false,
+              ok: false,
+              scope: "",
+              error: "страница не в secure context"
+            };
+            return null;
+          }
+          registrationResult.attempted = true;
+          try {
+            var registration = await navigator.serviceWorker.register("./service-worker.js");
+            registrationResult.ok = true;
+            registrationResult.scope = registration.scope || "";
+            registrationResult.error = "";
+            await registration.update();
+            return registration;
+          } catch (error) {
+            registrationResult.ok = false;
+            registrationResult.error = error && error.message ? error.message : String(error);
+            return null;
+          }
         }
 
         function renderTable(rows) {
@@ -179,6 +219,9 @@
             locationOrigin: location.origin,
             navigatorOnline: navigator.onLine,
             serviceWorkerSupported: swSupported,
+            registrationAttempted: registrationResult.attempted,
+            registrationOk: registrationResult.ok,
+            registrationError: registrationResult.error,
             pageControlled: Boolean(navigator.serviceWorker && navigator.serviceWorker.controller),
             registrationScope: registration ? registration.scope : "",
             activeState: registration ? stateOf(registration.active) : "нет",
@@ -197,6 +240,7 @@
             "<p><b>Expected cache:</b> " + report.expectedCacheName + "</p>" +
             "<p><b>Location:</b> " + report.locationHref + "</p>" +
             "<p><b>Online:</b> " + text(report.navigatorOnline) + " · <b>Service worker:</b> " + text(report.serviceWorkerSupported) + " · <b>Controlled:</b> " + text(report.pageControlled) + "</p>" +
+            "<p><b>Registration:</b> attempted=" + text(report.registrationAttempted) + " · ok=" + text(report.registrationOk) + (report.registrationError ? " · error=" + report.registrationError : "") + "</p>" +
             "<p><b>Scope:</b> " + (report.registrationScope || "нет") + "</p>" +
             "<p><b>SW states:</b> active=" + report.activeState + " · waiting=" + report.waitingState + " · installing=" + report.installingState + "</p>" +
             "<p><b>Missing expected keys:</b> <span class=\"" + (missing ? "bad" : "ok") + "\">" + missing + "</span></p>";
@@ -219,7 +263,10 @@
         async function updateServiceWorker() {
           var registration = "serviceWorker" in navigator ? await navigator.serviceWorker.getRegistration() : null;
           if (!registration) {
-            document.getElementById("summary").innerHTML = "<span class=\"bad\">Service worker registration не найден.</span>";
+            registration = await registerServiceWorker();
+          }
+          if (!registration) {
+            await checkCache();
             return;
           }
           await registration.update();
@@ -267,7 +314,7 @@
           });
         });
 
-        checkCache();
+        registerServiceWorker().then(checkCache);
       })();
     </script>
   </body>

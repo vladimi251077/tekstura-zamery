@@ -8,6 +8,10 @@ const OFFLINE_DIAGNOSTICS_URLS = [
   "/offline-diagnostics.html",
   "./offline-diagnostics.html",
 ];
+const PRECACHE_REPORT_URLS = [
+  "/sw-precache-report.json",
+  "./sw-precache-report.json",
+];
 const IOS_INDEX_URLS = [
   "./index.html",
   "/index.html",
@@ -124,31 +128,30 @@ function offlineFallbackResponse(status = 503) {
 }
 
 async function cacheShellUrl(cache, url) {
+  const absoluteUrl = new URL(url, self.registration.scope).href;
   if (OFFLINE_FALLBACK_URLS.includes(url)) {
-    await cache.put(url, offlineFallbackResponse(200));
-    return null;
+    const fallback = offlineFallbackResponse(200);
+    await cache.put(new Request(absoluteUrl), fallback.clone());
+    await cache.put(url, fallback.clone());
+    return { url, absoluteUrl, status: 200, synthetic: true };
   }
-  const request = new Request(url, { cache: "reload" });
+  const request = new Request(absoluteUrl, { cache: "reload" });
   const response = await fetch(request);
   if (!response.ok) throw new Error(`HTTP ${response.status} ${url}`);
-  await cache.put(request, response.clone());
+  await cache.put(new Request(absoluteUrl), response.clone());
   await cache.put(url, response.clone());
-  return response;
+  return { url, absoluteUrl, status: response.status, synthetic: false };
 }
 
-async function cacheIosStartUrls(cache) {
-  const indexRequest = new Request(new URL("./index.html", self.registration.scope).href, { cache: "reload" });
-  const indexResponse = await fetch(indexRequest);
-  if (!indexResponse.ok) throw new Error(`HTTP ${indexResponse.status} ${indexRequest.url}`);
-  for (const url of [...IOS_INDEX_URLS, ...IOS_ROOT_URLS]) {
-    await cache.put(url, indexResponse.clone());
+async function writePrecacheReport(cache, report) {
+  const response = new Response(JSON.stringify(report, null, 2), {
+    headers: { "Content-Type": "application/json; charset=utf-8" },
+  });
+  for (const url of PRECACHE_REPORT_URLS) {
+    const absoluteUrl = new URL(url, self.registration.scope).href;
+    await cache.put(new Request(absoluteUrl), response.clone());
+    await cache.put(url, response.clone());
   }
-}
-
-async function cacheOfflineFallback(cache) {
-  const fallback = offlineFallbackResponse(200);
-  await cache.put("/offline-fallback.html", fallback.clone());
-  await cache.put("./offline-fallback.html", fallback.clone());
 }
 
 async function cachedNavigationFallback(cache, request) {
@@ -202,20 +205,37 @@ self.addEventListener("install", (event) => {
   event.waitUntil((async () => {
     await self.skipWaiting();
     const cache = await caches.open(APP_SHELL_CACHE);
-    await cacheOfflineFallback(cache);
-    try {
-      await cacheIosStartUrls(cache);
-    } catch (error) {
-      console.error("[SW] start URL precache failed", error);
-    }
+    const report = {
+      cacheName: APP_SHELL_CACHE,
+      version: CACHE_VERSION,
+      scope: self.registration.scope,
+      startedAt: new Date().toISOString(),
+      ok: [],
+      missing: [],
+      errors: [],
+    };
     for (const url of APP_SHELL_URLS) {
       try {
-        await cacheShellUrl(cache, url);
+        const cached = await cacheShellUrl(cache, url);
+        report.ok.push(cached);
       } catch (error) {
         const required = REQUIRED_APP_SHELL_URLS.has(url);
         const level = required ? "error" : "warn";
         console[level](`[SW] precache failed (${required ? "required" : "optional"})`, url, error);
+        report.missing.push(url);
+        report.errors.push({
+          url,
+          absoluteUrl: new URL(url, self.registration.scope).href,
+          required,
+          message: error?.message || String(error),
+        });
       }
+    }
+    report.finishedAt = new Date().toISOString();
+    try {
+      await writePrecacheReport(cache, report);
+    } catch (error) {
+      console.error("[SW] precache report was not saved", error);
     }
   })());
 });

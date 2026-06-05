@@ -1242,10 +1242,11 @@
       const m1X = right ? f1.x + f1.w : f1.x;
       const b2X = right ? f2.x : f2.x + f2.w;
       const labelOnly = { labelOnly: true, clean: true };
-      addDim("M2", "M2", p.secondFlightLength, "", "top", { x: outer.x, y: outer.y }, { x: outer.x + outer.w, y: outer.y }, 58, labelOnly);
-      addDim("B2", "B2", p.secondFlightWidth, "", right ? "left" : "right", { x: b2X, y: f2.y }, { x: b2X, y: f2.y + f2.h }, 58, labelOnly);
-      addDim("M1", "M1", p.firstFlightLength, "", right ? "right" : "left", { x: m1X, y: turn.y }, { x: m1X, y: f1.y + f1.h }, 58, labelOnly);
-      addDim("B1", "B1", p.firstFlightWidth, "", "bottom", { x: f1.x, y: f1.y + f1.h }, { x: f1.x + f1.w, y: f1.y + f1.h }, 58, labelOnly);
+      const emptyLDimOffset = 72;
+      addDim("M2", "M2", p.secondFlightLength, "", "top", { x: outer.x, y: outer.y }, { x: outer.x + outer.w, y: outer.y }, emptyLDimOffset, labelOnly);
+      addDim("B2", "B2", p.secondFlightWidth, "", right ? "left" : "right", { x: b2X, y: f2.y }, { x: b2X, y: f2.y + f2.h }, emptyLDimOffset, labelOnly);
+      addDim("M1", "M1", p.firstFlightLength, "", right ? "right" : "left", { x: m1X, y: turn.y }, { x: m1X, y: f1.y + f1.h }, emptyLDimOffset, labelOnly);
+      addDim("B1", "B1", p.firstFlightWidth, "", "bottom", { x: f1.x, y: f1.y + f1.h }, { x: f1.x + f1.w, y: f1.y + f1.h }, emptyLDimOffset, labelOnly);
       title = right ? "Пустой Г-проём правый" : "Пустой Г-проём левый";
     } else if (v.key === "ready_straight") {
       const f1 = makeRect("flight1", 0, 0, m1, b1, "flight1");
@@ -1672,9 +1673,13 @@
       let label;
       if (horizontal) {
         const y = rect.y + rect.h * lane;
-        start = { x: rect.x + rect.w * 0.18, y };
-        end = { x: rect.x + rect.w * 0.44, y };
-        label = { x: rect.x + rect.w * 0.31, y: y + (lane < 0.5 ? -Math.max(14, rect.h * 0.10) : Math.max(22, rect.h * 0.16)) };
+        const emptyLFlight2 = key === "flight2" && v.key?.startsWith("empty_l");
+        const startFactor = emptyLFlight2 && v.key.includes("_right") ? 0.32 : emptyLFlight2 ? 0.14 : 0.18;
+        const endFactor = emptyLFlight2 && v.key.includes("_right") ? 0.58 : emptyLFlight2 ? 0.40 : 0.44;
+        const labelFactor = (startFactor + endFactor) / 2;
+        start = { x: rect.x + rect.w * startFactor, y };
+        end = { x: rect.x + rect.w * endFactor, y };
+        label = { x: rect.x + rect.w * labelFactor, y: y + (lane < 0.5 ? -Math.max(14, rect.h * 0.10) : Math.max(22, rect.h * 0.16)) };
       } else {
         const x = rect.x + rect.w * lane;
         start = { x, y: rect.y + rect.h * 0.82 };

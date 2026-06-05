@@ -114,6 +114,8 @@
           "./vendor/supabase-js.js",
           "/offline-fallback.html",
           "./offline-fallback.html",
+          "/sw-precache-report.json",
+          "./sw-precache-report.json",
           "/offline-diagnostics.html",
           "./offline-diagnostics.html"
         ];
@@ -206,9 +208,18 @@
           }
 
           var firstKeys = [];
+          var precacheReport = null;
           if (expectedCache) {
             var requests = await expectedCache.keys();
             firstKeys = requests.slice(0, 100).map(function(request) { return request.url; });
+            var precacheResponse = await expectedCache.match("/sw-precache-report.json", { ignoreSearch: true });
+            if (precacheResponse) {
+              try {
+                precacheReport = await precacheResponse.json();
+              } catch (error) {
+                precacheReport = { parseError: error && error.message ? error.message : String(error) };
+              }
+            }
           }
 
           return {
@@ -229,6 +240,7 @@
             installingState: registration ? stateOf(registration.installing) : "нет",
             cacheNames: cacheNames,
             appShellCacheNames: appShellCacheNames,
+            precacheReport: precacheReport,
             checkedKeys: checked,
             first100AppShellKeys: firstKeys
           };
@@ -236,6 +248,9 @@
 
         function renderReport(report) {
           var missing = report.checkedKeys.filter(function(row) { return !row.expected; }).length;
+          var precacheSummary = report.precacheReport
+            ? "ok=" + (report.precacheReport.ok ? report.precacheReport.ok.length : 0) + " · missing=" + (report.precacheReport.missing ? report.precacheReport.missing.length : 0) + " · errors=" + (report.precacheReport.errors ? report.precacheReport.errors.length : 0)
+            : "нет";
           document.getElementById("summary").innerHTML =
             "<p><b>Expected cache:</b> " + report.expectedCacheName + "</p>" +
             "<p><b>Location:</b> " + report.locationHref + "</p>" +
@@ -243,6 +258,7 @@
             "<p><b>Registration:</b> attempted=" + text(report.registrationAttempted) + " · ok=" + text(report.registrationOk) + (report.registrationError ? " · error=" + report.registrationError : "") + "</p>" +
             "<p><b>Scope:</b> " + (report.registrationScope || "нет") + "</p>" +
             "<p><b>SW states:</b> active=" + report.activeState + " · waiting=" + report.waitingState + " · installing=" + report.installingState + "</p>" +
+            "<p><b>Precache report:</b> " + precacheSummary + "</p>" +
             "<p><b>Missing expected keys:</b> <span class=\"" + (missing ? "bad" : "ok") + "\">" + missing + "</span></p>";
           renderTable(report.checkedKeys);
           document.getElementById("cache-keys").textContent = report.first100AppShellKeys.length ? report.first100AppShellKeys.join("\n") : "нет ключей";

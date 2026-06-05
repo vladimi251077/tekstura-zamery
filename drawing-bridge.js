@@ -193,6 +193,7 @@
       .db-svg .winder-envelope{fill:#e0f2fe;stroke:#0f172a;stroke-width:2;vector-effect:non-scaling-stroke}
       .db-svg .route{fill:none;stroke:#0f172a;stroke-width:2.8;marker-end:url(#db-arrow);vector-effect:non-scaling-stroke}
       .db-svg .dimension line,.db-svg .dimension path{stroke:#0f172a;stroke-width:1.6;marker-start:url(#db-tick);marker-end:url(#db-tick);vector-effect:non-scaling-stroke}
+      .db-svg .dimension.clean .dim-ext{marker-start:none;marker-end:none;stroke-dasharray:none}
       .db-svg .dimension text{font:800 15px system-ui, sans-serif;fill:#0f172a;paint-order:stroke;stroke:#fff;stroke-width:4px;stroke-linejoin:round;cursor:pointer}
       .db-svg .dim-hit,.db-svg .wall-hit,.db-svg .window-hit,.db-svg .zone-hit{stroke:transparent;stroke-width:18;fill:transparent;cursor:pointer;pointer-events:stroke}
       .db-svg .wall-mark{stroke:#6b7280;stroke-width:9;stroke-linecap:square;vector-effect:non-scaling-stroke}
@@ -1183,9 +1184,9 @@
     let outer = { x: 0, y: 0, w: m1, h: b1 };
 
     const visibleDimensionIds = new Set(visibleParams());
-    const addDim = (id, label, value, unit, side, start, end, offset = 56) => {
+    const addDim = (id, label, value, unit, side, start, end, offset = 56, options = {}) => {
       if (!visibleDimensionIds.has(id)) return;
-      dimensions.push({ id, label, value, unit, side, start, end, offset });
+      dimensions.push({ id, label, value, unit, side, start, end, offset, ...options });
     };
     const shouldDrawTreads = () => v.mode === "ready";
     const visualTreadCount = (count, fallback) => Math.max(1, Math.round(Number(count) || fallback));
@@ -1238,14 +1239,14 @@
       const turn = rects.find((r) => r.id === "turn");
       setFlightDirection("flight1", { x: f1.x + f1.w / 2, y: f1.y + f1.h }, { x: f1.x + f1.w / 2, y: f1.y });
       setFlightDirection("flight2", right ? { x: f2.x + f2.w, y: f2.y + f2.h / 2 } : { x: f2.x, y: f2.y + f2.h / 2 }, right ? { x: f2.x, y: f2.y + f2.h / 2 } : { x: f2.x + f2.w, y: f2.y + f2.h / 2 });
-      addDim("M1", "M1", p.firstFlightLength, "мм", right ? "right" : "left", { x: f1.x, y: f1.y }, { x: f1.x, y: f1.y + f1.h }, 70);
-      addDim("B1", "B1", p.firstFlightWidth, "мм", "bottom", { x: f1.x, y: f1.y + f1.h }, { x: f1.x + f1.w, y: f1.y + f1.h }, 70);
-      addDim("M2", "M2", p.secondFlightLength, "мм", "top", { x: f2.x, y: f2.y }, { x: f2.x + f2.w, y: f2.y }, 70);
-      addDim("B2", "B2", p.secondFlightWidth, "мм", right ? "left" : "right", { x: f2.x + f2.w, y: f2.y }, { x: f2.x + f2.w, y: f2.y + f2.h }, 70);
-      addDim("ZL", "ZL", p.turnLength, "мм", "top", { x: turn.x, y: turn.y }, { x: turn.x + turn.w, y: turn.y }, 125);
-      addDim("ZW", "ZW", p.turnWidth, "мм", right ? "right" : "left", { x: turn.x, y: turn.y }, { x: turn.x, y: turn.y + turn.h }, 125);
-      addDim("H", "H", p.height, "мм", right ? "left" : "right", { x: outer.x + outer.w, y: outer.y }, { x: outer.x + outer.w, y: outer.y + outer.h }, 150);
-      addDim("T", "T", p.slabThickness, "мм", "bottom", { x: outer.x, y: outer.y + outer.h }, { x: outer.x + outer.w, y: outer.y + outer.h }, 165);
+      const m1X = right ? f1.x + f1.w : f1.x;
+      const b2X = right ? f2.x : f2.x + f2.w;
+      const labelOnly = { labelOnly: true, clean: true };
+      const emptyLDimOffset = 72;
+      addDim("M2", "M2", p.secondFlightLength, "", "top", { x: outer.x, y: outer.y }, { x: outer.x + outer.w, y: outer.y }, emptyLDimOffset, labelOnly);
+      addDim("B2", "B2", p.secondFlightWidth, "", right ? "left" : "right", { x: b2X, y: f2.y }, { x: b2X, y: f2.y + f2.h }, emptyLDimOffset, labelOnly);
+      addDim("M1", "M1", p.firstFlightLength, "", right ? "right" : "left", { x: m1X, y: turn.y }, { x: m1X, y: f1.y + f1.h }, emptyLDimOffset, labelOnly);
+      addDim("B1", "B1", p.firstFlightWidth, "", "bottom", { x: f1.x, y: f1.y + f1.h }, { x: f1.x + f1.w, y: f1.y + f1.h }, emptyLDimOffset, labelOnly);
       title = right ? "Пустой Г-проём правый" : "Пустой Г-проём левый";
     } else if (v.key === "ready_straight") {
       const f1 = makeRect("flight1", 0, 0, m1, b1, "flight1");
@@ -1339,7 +1340,7 @@
       title = "П-образная лестница";
     }
 
-    return { rects, lines, dimensions, winders, stepLabels, route, outer, title, params: p, flightDirections };
+    return { rects, lines, dimensions, winders, stepLabels, route, outer, title, params: p, flightDirections, suppressEdgeExtensions: v.key.startsWith("empty_l") };
   }
 
   function clamp(value, min, max) {
@@ -1480,7 +1481,7 @@
     const windows = showSiteMarks ? renderWindows(geometry, tr) : "";
     const ascent = showSiteMarks && shouldRenderAscent() ? renderAscent(geometry, tr) : "";
     const balustrade = showSiteMarks ? renderTopBalustrade(geometry, tr) : "";
-    const edges = showSiteMarks ? renderEdgeExtensions(geometry, tr) : "";
+    const edges = showSiteMarks && !geometry.suppressEdgeExtensions ? renderEdgeExtensions(geometry, tr) : "";
     const obstacles = showSiteMarks ? renderObstacles(geometry, tr) : "";
     const title = `<text class="caption" x="28" y="38">${escapeHtml(geometry.title)}</text>`;
     return `<svg class="db-svg" viewBox="0 0 ${viewport.w} ${viewport.h}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Замерная схема лестницы">${defs}<rect width="${viewport.w}" height="${viewport.h}" fill="#fff"/>${grid}${title}<g>${rects}${winders}${lines}${route}${walls}${windows}${ascent}${balustrade}${edges}${obstacles}${dimensions}${stepLabels}</g></svg>`;
@@ -1553,12 +1554,12 @@
       a.x += offset; b.x += offset;
     }
     const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-    const text = `${dim.label} ${dim.value || ""}${dim.unit === "шт" ? " шт" : ""}`;
+    const text = dim.labelOnly ? dim.label : `${dim.label} ${dim.value || ""}${dim.unit === "шт" ? " шт" : ""}`;
     const rotate = dim.side === "left" || dim.side === "right" ? ` transform="rotate(-90 ${mid.x} ${mid.y})"` : "";
     const active = projectState.activeParam === dim.id ? " active" : "";
-    return `<g class="dimension${active}" data-param="${dim.id}">
-      <line x1="${a0.x}" y1="${a0.y}" x2="${a.x}" y2="${a.y}" stroke="#94a3b8" stroke-width="1" stroke-dasharray="4 4"/>
-      <line x1="${b0.x}" y1="${b0.y}" x2="${b.x}" y2="${b.y}" stroke="#94a3b8" stroke-width="1" stroke-dasharray="4 4"/>
+    return `<g class="dimension${dim.clean ? " clean" : ""}${active}" data-param="${dim.id}">
+      <line class="dim-ext" x1="${a0.x}" y1="${a0.y}" x2="${a.x}" y2="${a.y}" stroke="#94a3b8" stroke-width="1" stroke-dasharray="4 4"/>
+      <line class="dim-ext" x1="${b0.x}" y1="${b0.y}" x2="${b.x}" y2="${b.y}" stroke="#94a3b8" stroke-width="1" stroke-dasharray="4 4"/>
       <line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"/>
       <line class="dim-hit" data-param="${dim.id}" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"/>
       <text data-param="${dim.id}" x="${mid.x}" y="${mid.y - 8}" text-anchor="middle"${rotate}>${escapeHtml(text)}</text>
@@ -1672,9 +1673,13 @@
       let label;
       if (horizontal) {
         const y = rect.y + rect.h * lane;
-        start = { x: rect.x + rect.w * 0.18, y };
-        end = { x: rect.x + rect.w * 0.44, y };
-        label = { x: rect.x + rect.w * 0.31, y: y + (lane < 0.5 ? -Math.max(14, rect.h * 0.10) : Math.max(22, rect.h * 0.16)) };
+        const emptyLFlight2 = key === "flight2" && v.key?.startsWith("empty_l");
+        const startFactor = emptyLFlight2 && v.key.includes("_right") ? 0.32 : emptyLFlight2 ? 0.14 : 0.18;
+        const endFactor = emptyLFlight2 && v.key.includes("_right") ? 0.58 : emptyLFlight2 ? 0.40 : 0.44;
+        const labelFactor = (startFactor + endFactor) / 2;
+        start = { x: rect.x + rect.w * startFactor, y };
+        end = { x: rect.x + rect.w * endFactor, y };
+        label = { x: rect.x + rect.w * labelFactor, y: y + (lane < 0.5 ? -Math.max(14, rect.h * 0.10) : Math.max(22, rect.h * 0.16)) };
       } else {
         const x = rect.x + rect.w * lane;
         start = { x, y: rect.y + rect.h * 0.82 };

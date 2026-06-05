@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tekstura offline diagnostics</title>
+    <style>
+      :root {
+        color: #111827;
+        background: #f8fafc;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      body {
+        margin: 0;
+        padding: 18px;
+      }
+      h1 {
+        color: #071a49;
+        font-size: 24px;
+        margin: 0 0 6px;
+      }
+      p {
+        margin: 6px 0 14px;
+      }
+      .actions {
+        display: grid;
+        gap: 8px;
+        grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+        margin: 14px 0;
+      }
+      button {
+        background: #2563eb;
+        border: 0;
+        border-radius: 8px;
+        color: #fff;
+        font-size: 14px;
+        font-weight: 700;
+        padding: 11px 12px;
+      }
+      button.secondary {
+        background: #e5e7eb;
+        color: #111827;
+      }
+      .panel {
+        background: #fff;
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+        margin-top: 12px;
+        padding: 12px;
+      }
+      .ok { color: #047857; font-weight: 700; }
+      .bad { color: #b91c1c; font-weight: 700; }
+      .muted { color: #6b7280; }
+      pre {
+        background: #111827;
+        border-radius: 8px;
+        color: #f9fafb;
+        font-size: 12px;
+        line-height: 1.45;
+        overflow: auto;
+        padding: 12px;
+        white-space: pre-wrap;
+      }
+      table {
+        border-collapse: collapse;
+        font-size: 13px;
+        width: 100%;
+      }
+      td, th {
+        border-bottom: 1px solid #e5e7eb;
+        padding: 7px 5px;
+        text-align: left;
+        vertical-align: top;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Tekstura offline diagnostics</h1>
+    <p class="muted">Эта страница не подключает app.js, Supabase или styles.css.</p>
+
+    <div class="actions">
+      <button id="check-cache-btn" type="button">Проверить кэш</button>
+      <button id="update-sw-btn" type="button">Обновить service worker</button>
+      <button id="clear-shell-btn" class="secondary" type="button">Очистить только app-shell cache</button>
+      <button id="copy-report-btn" class="secondary" type="button">Скопировать отчёт</button>
+    </div>
+
+    <div id="summary" class="panel">Готовлю отчёт...</div>
+    <div class="panel">
+      <h2>Проверяемые ключи</h2>
+      <div id="cache-table"></div>
+    </div>
+    <div class="panel">
+      <h2>Первые 100 ключей app-shell cache</h2>
+      <pre id="cache-keys">нет данных</pre>
+    </div>
+    <div class="panel">
+      <h2>Полный отчёт</h2>
+      <pre id="report">нет данных</pre>
+    </div>
+
+    <script>
+      (function() {
+        var EXPECTED_CACHE = "tekstura-offline-shell-v30-app-shell";
+        var APP_JS_QUERY = "20260604-runtime-error-fallback-v2";
+        var CHECK_KEYS = [
+          "/",
+          "./",
+          "/index.html",
+          "./index.html",
+          "/app.js?v=" + APP_JS_QUERY,
+          "./app.js?v=" + APP_JS_QUERY,
+          "/vendor/supabase-js.js",
+          "./vendor/supabase-js.js",
+          "/offline-fallback.html",
+          "./offline-fallback.html",
+          "/offline-diagnostics.html",
+          "./offline-diagnostics.html"
+        ];
+        var lastReportText = "";
+
+        function text(value) {
+          if (value === true) return "да";
+          if (value === false) return "нет";
+          if (value === undefined || value === null || value === "") return "нет";
+          return String(value);
+        }
+
+        function stateOf(worker) {
+          return worker ? worker.state : "нет";
+        }
+
+        function renderTable(rows) {
+          var html = "<table><thead><tr><th>Ключ</th><th>Expected cache</th><th>Любой app-shell cache</th></tr></thead><tbody>";
+          rows.forEach(function(row) {
+            html += "<tr><td><code>" + row.key + "</code></td><td class=\"" + (row.expected ? "ok" : "bad") + "\">" + text(row.expected) + "</td><td>" + (row.anyCache || "нет") + "</td></tr>";
+          });
+          html += "</tbody></table>";
+          document.getElementById("cache-table").innerHTML = html;
+        }
+
+        async function matchAnyCache(cacheNames, key) {
+          for (var index = 0; index < cacheNames.length; index += 1) {
+            var cacheName = cacheNames[index];
+            var cache = await caches.open(cacheName);
+            if (await cache.match(key, { ignoreSearch: true })) return cacheName;
+          }
+          return "";
+        }
+
+        async function buildReport() {
+          var swSupported = "serviceWorker" in navigator;
+          var registration = swSupported ? await navigator.serviceWorker.getRegistration() : null;
+          var cacheNames = "caches" in window ? await caches.keys() : [];
+          var appShellCacheNames = cacheNames.filter(function(name) {
+            return name.indexOf("tekstura-offline-shell-") === 0;
+          });
+          var expectedCache = "caches" in window ? await caches.open(EXPECTED_CACHE) : null;
+          var checked = [];
+
+          for (var index = 0; index < CHECK_KEYS.length; index += 1) {
+            var key = CHECK_KEYS[index];
+            var expected = expectedCache ? Boolean(await expectedCache.match(key, { ignoreSearch: true })) : false;
+            var anyCache = "caches" in window ? await matchAnyCache(appShellCacheNames, key) : "";
+            checked.push({ key: key, expected: expected, anyCache: anyCache });
+          }
+
+          var firstKeys = [];
+          if (expectedCache) {
+            var requests = await expectedCache.keys();
+            firstKeys = requests.slice(0, 100).map(function(request) { return request.url; });
+          }
+
+          return {
+            generatedAt: new Date().toISOString(),
+            expectedCacheName: EXPECTED_CACHE,
+            appJsQuery: APP_JS_QUERY,
+            locationHref: location.href,
+            locationOrigin: location.origin,
+            navigatorOnline: navigator.onLine,
+            serviceWorkerSupported: swSupported,
+            pageControlled: Boolean(navigator.serviceWorker && navigator.serviceWorker.controller),
+            registrationScope: registration ? registration.scope : "",
+            activeState: registration ? stateOf(registration.active) : "нет",
+            waitingState: registration ? stateOf(registration.waiting) : "нет",
+            installingState: registration ? stateOf(registration.installing) : "нет",
+            cacheNames: cacheNames,
+            appShellCacheNames: appShellCacheNames,
+            checkedKeys: checked,
+            first100AppShellKeys: firstKeys
+          };
+        }
+
+        function renderReport(report) {
+          var missing = report.checkedKeys.filter(function(row) { return !row.expected; }).length;
+          document.getElementById("summary").innerHTML =
+            "<p><b>Expected cache:</b> " + report.expectedCacheName + "</p>" +
+            "<p><b>Location:</b> " + report.locationHref + "</p>" +
+            "<p><b>Online:</b> " + text(report.navigatorOnline) + " · <b>Service worker:</b> " + text(report.serviceWorkerSupported) + " · <b>Controlled:</b> " + text(report.pageControlled) + "</p>" +
+            "<p><b>Scope:</b> " + (report.registrationScope || "нет") + "</p>" +
+            "<p><b>SW states:</b> active=" + report.activeState + " · waiting=" + report.waitingState + " · installing=" + report.installingState + "</p>" +
+            "<p><b>Missing expected keys:</b> <span class=\"" + (missing ? "bad" : "ok") + "\">" + missing + "</span></p>";
+          renderTable(report.checkedKeys);
+          document.getElementById("cache-keys").textContent = report.first100AppShellKeys.length ? report.first100AppShellKeys.join("\n") : "нет ключей";
+          lastReportText = JSON.stringify(report, null, 2);
+          document.getElementById("report").textContent = lastReportText;
+        }
+
+        async function checkCache() {
+          try {
+            renderReport(await buildReport());
+          } catch (error) {
+            lastReportText = "Ошибка диагностики: " + (error && error.message ? error.message : String(error));
+            document.getElementById("summary").innerHTML = "<span class=\"bad\">" + lastReportText + "</span>";
+            document.getElementById("report").textContent = lastReportText;
+          }
+        }
+
+        async function updateServiceWorker() {
+          var registration = "serviceWorker" in navigator ? await navigator.serviceWorker.getRegistration() : null;
+          if (!registration) {
+            document.getElementById("summary").innerHTML = "<span class=\"bad\">Service worker registration не найден.</span>";
+            return;
+          }
+          await registration.update();
+          await checkCache();
+        }
+
+        async function clearShellCache() {
+          if (!("caches" in window)) return;
+          var names = await caches.keys();
+          var shellNames = names.filter(function(name) {
+            return name.indexOf("tekstura-offline-shell-") === 0;
+          });
+          await Promise.all(shellNames.map(function(name) { return caches.delete(name); }));
+          await checkCache();
+        }
+
+        async function copyReport() {
+          if (!lastReportText) await checkCache();
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(lastReportText);
+            return;
+          }
+          var textarea = document.createElement("textarea");
+          textarea.value = lastReportText;
+          document.body.appendChild(textarea);
+          textarea.select();
+          document.execCommand("copy");
+          textarea.remove();
+        }
+
+        document.getElementById("check-cache-btn").addEventListener("click", checkCache);
+        document.getElementById("update-sw-btn").addEventListener("click", function() {
+          updateServiceWorker().catch(function(error) {
+            document.getElementById("summary").innerHTML = "<span class=\"bad\">Не удалось обновить service worker: " + (error && error.message ? error.message : String(error)) + "</span>";
+          });
+        });
+        document.getElementById("clear-shell-btn").addEventListener("click", function() {
+          clearShellCache().catch(function(error) {
+            document.getElementById("summary").innerHTML = "<span class=\"bad\">Не удалось очистить app-shell cache: " + (error && error.message ? error.message : String(error)) + "</span>";
+          });
+        });
+        document.getElementById("copy-report-btn").addEventListener("click", function() {
+          copyReport().catch(function(error) {
+            document.getElementById("summary").innerHTML = "<span class=\"bad\">Не удалось скопировать отчёт: " + (error && error.message ? error.message : String(error)) + "</span>";
+          });
+        });
+
+        checkCache();
+      })();
+    </script>
+  </body>
+</html>

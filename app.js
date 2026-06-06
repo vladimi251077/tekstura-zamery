@@ -93,6 +93,8 @@ const state = {
   offlineAutosaveInFlight: null,
   offlineSyncInFlight: new Set(),
   selectedTrashIds: new Set(),
+  lastSupabaseError: null,
+  profileSource: "",
 };
 
 
@@ -135,6 +137,46 @@ function offlineActionMessage() {
 
 function userFacingError(error) {
   return isOfflineNetworkError(error) ? offlineActionMessage() : (error?.message || String(error));
+}
+
+function formatSupabaseError(error) {
+  if (!error) return "нет";
+  const parts = [
+    error.message ? `message=${error.message}` : "",
+    error.code ? `code=${error.code}` : "",
+    error.details ? `details=${error.details}` : "",
+    error.hint ? `hint=${error.hint}` : "",
+  ].filter(Boolean);
+  return parts.length ? parts.join("; ") : String(error);
+}
+
+function rememberSupabaseError(context, error, extra = {}) {
+  state.lastSupabaseError = {
+    context,
+    message: error?.message || String(error),
+    code: error?.code || "",
+    details: error?.details || "",
+    hint: error?.hint || "",
+    full: formatSupabaseError(error),
+    auth_user_id: state.user?.id || "",
+    auth_email: state.user?.email || "",
+    role: currentRole(),
+    profile_id: state.profile?.id || "",
+    profile_source: state.profileSource || "",
+    created_by: extra.created_by || "",
+    timestamp: new Date().toISOString(),
+  };
+}
+
+function clientOwnerDiagnostics(createdBy = state.user?.id) {
+  return [
+    `auth_user_id=${state.user?.id || "нет"}`,
+    `auth_email=${state.user?.email || "нет"}`,
+    `current_role=${currentRole()}`,
+    `profile_id=${state.profile?.id || "нет"}`,
+    `profile_source=${state.profileSource || "нет"}`,
+    `created_by=${createdBy || "нет"}`,
+  ].join("; ");
 }
 
 function renderStartupError(error) {
@@ -280,6 +322,29 @@ async function buildOfflineHealthcheckReport() {
   }
   const localTempCount = await window.TeksturaOfflineDB?.countOfflineDrafts?.() || 0;
   const isControlled = Boolean(navigator.serviceWorker?.controller);
+  let profileExists = "не проверено";
+  if (supabaseClient && navigator.onLine && state.user?.id) {
+    try {
+      const { data, error } = await supabaseClient.from("profiles").select("id, role, full_name").eq("id", state.user.id).maybeSingle();
+      if (error) {
+        profileExists = `ошибка: ${formatSupabaseError(error)}`;
+      } else {
+        profileExists = data?.id ? `да (${data.id}, role=${data.role || "нет"})` : "нет";
+      }
+    } catch (error) {
+      profileExists = userFacingError(error);
+    }
+  }
+  const authDiagnostics = [
+    `Current auth user id: ${state.user?.id || "нет"}`,
+    `Current auth email: ${state.user?.email || "нет"}`,
+    `Current role: ${currentRole()}`,
+    `Profile source: ${state.profileSource || "нет"}`,
+    `Profile row for auth user: ${profileExists}`,
+    `created_by for new client: ${state.user?.id || "нет"}`,
+    `Last Supabase error: ${state.lastSupabaseError?.full || "нет"}`,
+    state.lastSupabaseError ? `Last Supabase context: ${state.lastSupabaseError.context}; ${clientOwnerDiagnostics(state.lastSupabaseError.created_by)}` : "",
+  ].filter(Boolean);
   return [
     `Expected cache: ${OFFLINE_SHELL_CACHE_NAME}`,
     `Caches: ${cacheNames.length ? cacheNames.join(", ") : "нет"}`,
@@ -298,6 +363,7 @@ async function buildOfflineHealthcheckReport() {
     `Location: ${location.href}`,
     `Origin: ${location.origin}`,
     `Сеть: ${navigator.onLine ? "online" : "offline"}`,
+    ...authDiagnostics,
     `Локальные TEMP-черновики: ${localTempCount}`,
     isControlled ? "" : "Откройте сайт онлайн и нажмите Обновить ещё раз — iPhone ещё не передал страницу под service worker.",
     shellCacheReady ? "Офлайн-режим готов" : "Офлайн-режим ещё не подготовлен",
@@ -912,10 +978,16 @@ async function syncOfflineDraft(localId) {
     clientPayload.created_by = clientPayload.created_by || state.user?.id;
     if (clientId) {
       const { error: clientUpdateError } = await supabaseClient.from("clients").update(clientPayload).eq("id", clientId);
-      if (clientUpdateError) throw new Error(`Ошибка обновления клиента: ${clientUpdateError.message || clientUpdateError}`);
+      if (clientUpdateError) {
+        rememberSupabaseError("offline draft client update", clientUpdateError, { created_by: clientPayload.created_by });
+        throw new Error(`Ошибка обновления клиента: ${formatSupabaseError(clientUpdateError)}. Диагностика: ${clientOwnerDiagnostics(clientPayload.created_by)}`);
+      }
     } else {
       const { data: client, error: clientError } = await supabaseClient.from("clients").insert(clientPayload).select("*").single();
-      if (clientError) throw new Error(`Ошибка создания клиента: ${clientError.message || clientError}`);
+      if (clientError) {
+        rememberSupabaseError("offline draft client insert", clientError, { created_by: clientPayload.created_by });
+        throw new Error(`Ошибка создания клиента: ${formatSupabaseError(clientError)}. Диагностика: ${clientOwnerDiagnostics(clientPayload.created_by)}`);
+      }
       clientId = client.id;
       await updateOfflineDraftSyncFields(localId, { sync_status: "syncing", server_client_id: clientId });
     }
@@ -1557,16 +1629,19 @@ function showApp(isAuthed) {
 async function loadProfile() {
   if (!supabaseClient) {
     state.profile = fallbackProfileFromSession(state.user);
+    state.profileSource = "fallback:no-supabase";
     return;
   }
 
   const { data, error } = await supabaseClient.from("profiles").select("*").eq("id", state.user.id).maybeSingle();
   if (data) {
     state.profile = data;
+    state.profileSource = "profiles";
     return;
   }
   if (error && isOfflineNetworkError(error)) showOfflineState();
   state.profile = fallbackProfileFromSession(state.user);
+  state.profileSource = error ? `fallback:profile-error:${formatSupabaseError(error)}` : "fallback:profile-missing";
 }
 
 async function init() {
@@ -2198,10 +2273,16 @@ async function saveMeasurement(options = {}) {
   let clientId = state.selected?.client_id;
   if (clientId) {
     const { error } = await supabaseClient.from("clients").update(client).eq("id", clientId);
-    if (error) throw error;
+    if (error) {
+      rememberSupabaseError("client update before measurement save", error, { created_by: client.created_by });
+      throw new Error(`Ошибка обновления клиента: ${formatSupabaseError(error)}. Диагностика: ${clientOwnerDiagnostics(client.created_by)}`);
+    }
   } else {
     const { data, error } = await supabaseClient.from("clients").insert(client).select("*").single();
-    if (error) throw error;
+    if (error) {
+      rememberSupabaseError("client insert before measurement save", error, { created_by: client.created_by });
+      throw new Error(`Ошибка создания клиента: ${formatSupabaseError(error)}. Диагностика: ${clientOwnerDiagnostics(client.created_by)}`);
+    }
     clientId = data.id;
   }
   const isNewMeasurement = !state.selected?.id;

@@ -513,6 +513,29 @@ function isOfflinePhotoPendingSync(photo = {}) {
   return !isOfflinePhotoSynced(photo) && (photo.sync_status === "local_only" || photo.sync_status === "sync_error" || photo.sync_status === "syncing");
 }
 
+function offlinePhotoTraceDetails(photo = {}, serverMeasurementId = null) {
+  const syncedForMeasurement = isOfflinePhotoSynced(photo) && String(photo.server_measurement_id || photo.measurement_id) === String(serverMeasurementId);
+  const allowedStatus = photo.sync_status === "local_only" || photo.sync_status === "sync_error" || photo.sync_status === "synced";
+  const excludedReasons = [];
+  if (syncedForMeasurement) excludedReasons.push("already_synced_for_server_measurement_id");
+  if (!allowedStatus) excludedReasons.push(`sync_status_not_queued:${photo.sync_status || "empty"}`);
+  return {
+    local_photo_id: photo.local_photo_id || null,
+    sync_status: photo.sync_status || null,
+    measurement_id: photo.measurement_id || null,
+    server_measurement_id: photo.server_measurement_id || null,
+    server_file_path: photo.server_file_path || null,
+    is_offline_photo_synced: isOfflinePhotoSynced(photo),
+    synced_for_server_measurement_id: syncedForMeasurement,
+    allowed_status_for_queue: allowedStatus,
+    excluded_from_queue_reasons: excludedReasons,
+  };
+}
+
+function traceOfflineDraftPhotoSync(stage, details = {}) {
+  console.info(`[offline-photo-sync] ${stage}`, details);
+}
+
 function offlinePhotoSummary(photos = []) {
   const total = photos.length;
   const synced = photos.filter(isOfflinePhotoSynced).length;
@@ -540,13 +563,31 @@ function offlineDraftPhotoStatusLines(draft = {}) {
 
 function canShowOfflineDraftPhotoSyncButton(draft = {}) {
   const summary = draft.photo_summary || offlinePhotoSummary([]);
-  return Boolean(
-    navigator.onLine
-    && supabaseClient
-    && state.user
-    && draft.server_id
-    && summary.pending > 0
+  const checks = {
+    navigator_onLine: navigator.onLine,
+    has_supabase_client: Boolean(supabaseClient),
+    has_user: Boolean(state.user),
+    has_server_id: Boolean(draft.server_id),
+    summary_total: summary.total || 0,
+    summary_synced: summary.synced || 0,
+    summary_pending: summary.pending || 0,
+    summary_errors: summary.errors || 0,
+  };
+  const result = Boolean(
+    checks.navigator_onLine
+    && checks.has_supabase_client
+    && checks.has_user
+    && checks.has_server_id
+    && checks.summary_pending > 0
   );
+  traceOfflineDraftPhotoSync("photo sync button visibility checked", {
+    localId: draft.local_id || null,
+    serverMeasurementId: draft.server_id || null,
+    draft_sync_status: draft.sync_status || null,
+    result,
+    checks,
+  });
+  return result;
 }
 
 function renderOfflineDrafts() {
@@ -564,9 +605,18 @@ function renderOfflineDrafts() {
     const syncButton = canShowOfflineDraftSyncButton(draft)
       ? `<button type="button" class="btn primary" data-sync-offline-draft="${escapeHtml(draft.local_id)}">Синхронизировать</button>`
       : "";
-    const photoSyncButton = canShowOfflineDraftPhotoSyncButton(draft)
+    const showPhotoSyncButton = canShowOfflineDraftPhotoSyncButton(draft);
+    const photoSyncButton = showPhotoSyncButton
       ? `<button type="button" class="btn primary" data-sync-offline-photos="${escapeHtml(draft.local_id)}">Синхронизировать фото</button>`
       : "";
+    traceOfflineDraftPhotoSync("offline draft card rendered", {
+      localId: draft.local_id || null,
+      serverMeasurementId: draft.server_id || null,
+      draft_sync_status: draft.sync_status || null,
+      isSynced,
+      has_photo_sync_button: showPhotoSyncButton,
+      photo_summary: draft.photo_summary || null,
+    });
     const statusHtml = offlineDraftStatusLines(draft)
       .concat(offlineDraftPhotoStatusLines(draft))
       .map((line) => `<small class="offline-draft-sync-status">${escapeHtml(line)}</small>`)
@@ -862,30 +912,65 @@ async function insertOfflineMeasurementPhoto(photo, serverMeasurementId, filePat
 }
 
 async function syncOfflineDraftPhotos(localId, options = {}) {
+  traceOfflineDraftPhotoSync("start", { localId, options });
   if (!navigator.onLine || !supabaseClient || !state.user) {
+    traceOfflineDraftPhotoSync("finished", {
+      localId,
+      reason: "sync_unavailable",
+      navigator_onLine: navigator.onLine,
+      has_supabase_client: Boolean(supabaseClient),
+      has_user: Boolean(state.user),
+    });
     setMessage($("#form-message"), OFFLINE_SYNC_UNAVAILABLE_MESSAGE, "error");
     refreshOfflineDraftNotice();
     return { total: 0, synced: 0, failed: 0 };
   }
-  if (state.offlineSyncInFlight.has(`photos:${localId}`)) return null;
+  if (state.offlineSyncInFlight.has(`photos:${localId}`)) {
+    traceOfflineDraftPhotoSync("finished", { localId, reason: "already_in_flight" });
+    return null;
+  }
 
   const draft = await window.TeksturaOfflineDB?.getOfflineDraft?.(localId);
+  traceOfflineDraftPhotoSync("draft loaded", {
+    localId,
+    draft_found: Boolean(draft),
+    draft_server_id: draft?.server_id || null,
+    draft_sync_status: draft?.sync_status || null,
+  });
   if (!draft) {
+    traceOfflineDraftPhotoSync("finished", { localId, reason: "draft_not_found" });
     setMessage($("#form-message"), "Локальный черновик не найден в этом телефоне.", "error");
     return { total: 0, synced: 0, failed: 0 };
   }
   const serverMeasurementId = options.serverMeasurementId || draft.server_id;
+  traceOfflineDraftPhotoSync("serverMeasurementId resolved", { localId, serverMeasurementId });
   const storageBucket = "measurement-photos";
   if (!serverMeasurementId) {
+    traceOfflineDraftPhotoSync("finished", { localId, reason: "missing_server_measurement_id" });
     setMessage($("#form-message"), "Сначала синхронизируйте сам TEMP-замер, затем можно отправить фото.", "error");
     return { total: 0, synced: 0, failed: 0 };
   }
 
   state.offlineSyncInFlight.add(`photos:${localId}`);
   const photos = await window.TeksturaOfflineDB?.listOfflinePhotosByDraft?.(localId) || [];
+  traceOfflineDraftPhotoSync("local photos loaded", {
+    localId,
+    serverMeasurementId,
+    local_photos_count: photos.length,
+    photos: photos.map((photo) => offlinePhotoTraceDetails(photo, serverMeasurementId)),
+  });
   const photosToSync = photos.filter((photo) => {
     if (isOfflinePhotoSynced(photo) && String(photo.server_measurement_id || photo.measurement_id) === String(serverMeasurementId)) return false;
     return photo.sync_status === "local_only" || photo.sync_status === "sync_error" || photo.sync_status === "synced";
+  });
+  traceOfflineDraftPhotoSync("photosToSync calculated", {
+    localId,
+    serverMeasurementId,
+    photos_to_sync_count: photosToSync.length,
+    photos_to_sync: photosToSync.map((photo) => offlinePhotoTraceDetails(photo, serverMeasurementId)),
+    excluded_photos: photos
+      .filter((photo) => !photosToSync.includes(photo))
+      .map((photo) => offlinePhotoTraceDetails(photo, serverMeasurementId)),
   });
   let synced = photos.filter((photo) => isOfflinePhotoSynced(photo) && String(photo.server_measurement_id || photo.measurement_id) === String(serverMeasurementId)).length;
   let failed = 0;
@@ -893,35 +978,53 @@ async function syncOfflineDraftPhotos(localId, options = {}) {
 
   try {
     if (!photosToSync.length) {
+      traceOfflineDraftPhotoSync("finished", {
+        localId,
+        serverMeasurementId,
+        reason: "photos_to_sync_empty",
+        total: photos.length,
+        synced,
+        excluded_photos: photos.map((photo) => offlinePhotoTraceDetails(photo, serverMeasurementId)),
+      });
       setMessage($("#form-message"), photos.length ? `Фото отправлены в Supabase: ${synced} из ${photos.length}.` : "У этого TEMP-черновика нет локальных фото для отправки.", "ok");
       return { total: photos.length, synced, failed };
     }
 
     for (const [index, originalPhoto] of photosToSync.entries()) {
       let photo = originalPhoto;
+      traceOfflineDraftPhotoSync("photo started", { localId, serverMeasurementId, index: index + 1, total_to_sync: photosToSync.length, photo: offlinePhotoTraceDetails(photo, serverMeasurementId) });
       const progressMessage = `Загружаю локальное фото ${index + 1} из ${photosToSync.length}...`;
       setPhotoStatus(progressMessage, "loading");
       setMessage($("#form-message"), progressMessage);
       try {
         photo = await updateOfflinePhotoSyncFields(photo, { sync_status: "syncing", sync_error: "", last_sync_error: "" });
+        traceOfflineDraftPhotoSync("sync_status changed", { localId, local_photo_id: photo.local_photo_id, sync_status: photo.sync_status, photo: offlinePhotoTraceDetails(photo, serverMeasurementId) });
         const filePath = photo.server_file_path || offlinePhotoStoragePath(photo, serverMeasurementId);
         if (!photo.server_file_path) {
           const blob = photo.blob;
           if (!blob) throw new Error("Локальный файл фото не найден в IndexedDB.");
+          traceOfflineDraftPhotoSync("upload started", { localId, local_photo_id: photo.local_photo_id, bucket: storageBucket, filePath, contentType: photo.mime_type || blob.type || "image/jpeg", blob_size: blob.size || null });
           const { error: uploadError } = await supabaseClient.storage.from(storageBucket).upload(filePath, blob, {
             contentType: photo.mime_type || blob.type || "image/jpeg",
             upsert: false,
           });
+          traceOfflineDraftPhotoSync("upload returned", { localId, local_photo_id: photo.local_photo_id, filePath, has_error: Boolean(uploadError), error: uploadError || null });
           if (uploadError) throw new Error(formatOfflinePhotoSyncError("Storage upload", uploadError, { bucket: storageBucket, path: filePath, measurementId: serverMeasurementId }));
           photo = await updateOfflinePhotoSyncFields(photo, { server_file_path: filePath, measurement_id: serverMeasurementId, server_measurement_id: serverMeasurementId });
+          traceOfflineDraftPhotoSync("photo server fields saved", { localId, local_photo_id: photo.local_photo_id, photo: offlinePhotoTraceDetails(photo, serverMeasurementId) });
+        } else {
+          traceOfflineDraftPhotoSync("upload skipped", { localId, local_photo_id: photo.local_photo_id, reason: "server_file_path_already_exists", filePath });
         }
         let insertedPhoto = null;
         try {
+          traceOfflineDraftPhotoSync("insert measurement_photos started", { localId, local_photo_id: photo.local_photo_id, serverMeasurementId, filePath });
           insertedPhoto = await insertOfflineMeasurementPhoto(photo, serverMeasurementId, filePath);
+          traceOfflineDraftPhotoSync("insert measurement_photos returned", { localId, local_photo_id: photo.local_photo_id, inserted_photo_id: insertedPhoto?.id || null, insertedPhoto });
         } catch (insertError) {
+          traceOfflineDraftPhotoSync("insert measurement_photos returned", { localId, local_photo_id: photo.local_photo_id, has_error: true, error: insertError });
           throw new Error(formatOfflinePhotoSyncError("DB insert measurement_photos", insertError, { bucket: storageBucket, path: filePath, measurementId: serverMeasurementId }));
         }
-        await updateOfflinePhotoSyncFields(photo, {
+        const syncedPhoto = await updateOfflinePhotoSyncFields(photo, {
           sync_status: "synced",
           server_photo_id: insertedPhoto.id,
           server_file_path: filePath,
@@ -931,6 +1034,7 @@ async function syncOfflineDraftPhotos(localId, options = {}) {
           sync_error: "",
           last_sync_error: "",
         });
+        traceOfflineDraftPhotoSync("sync_status changed", { localId, local_photo_id: syncedPhoto.local_photo_id, sync_status: syncedPhoto.sync_status, photo: offlinePhotoTraceDetails(syncedPhoto, serverMeasurementId) });
         synced += 1;
       } catch (error) {
         failed += 1;
@@ -942,7 +1046,7 @@ async function syncOfflineDraftPhotos(localId, options = {}) {
           server_measurement_id: serverMeasurementId,
           sync_error: errorText,
           last_sync_error: errorText,
-        }).catch((markError) => console.warn("Offline photo sync error was not saved", markError));
+        }).then((errorPhoto) => traceOfflineDraftPhotoSync("sync_status changed", { localId, local_photo_id: errorPhoto.local_photo_id, sync_status: errorPhoto.sync_status, reason: "photo_failed", error: errorText, photo: offlinePhotoTraceDetails(errorPhoto, serverMeasurementId) })).catch((markError) => console.warn("Offline photo sync error was not saved", markError));
         console.warn("Offline draft photo sync failed", { localId, localPhotoId: photo.local_photo_id, error });
       }
     }
@@ -950,6 +1054,7 @@ async function syncOfflineDraftPhotos(localId, options = {}) {
     await loadOfflineDrafts();
     const finalPhotos = await window.TeksturaOfflineDB?.listOfflinePhotosByDraft?.(localId) || [];
     const finalSynced = finalPhotos.filter((photo) => isOfflinePhotoSynced(photo) && String(photo.server_measurement_id || photo.measurement_id) === String(serverMeasurementId)).length;
+    traceOfflineDraftPhotoSync("final photos loaded", { localId, serverMeasurementId, final_photos_count: finalPhotos.length, final_synced: finalSynced, failed });
     if (state.selected?.local_id === localId) {
       state.photos = finalPhotos;
       renderPhotos();
@@ -959,10 +1064,12 @@ async function syncOfflineDraftPhotos(localId, options = {}) {
       const message = `Фото отправлены в Supabase: ${finalSynced} из ${photos.length}. Все фото отправлены. Локальную копию можно удалить с телефона.`;
       setPhotoStatus(message, "ok");
       setMessage($("#form-message"), message, "ok");
+      traceOfflineDraftPhotoSync("finished", { localId, serverMeasurementId, reason: "all_photos_synced", total: photos.length, synced: finalSynced, failed });
     } else {
       const message = `Фото отправлены в Supabase: ${finalSynced} из ${photos.length}. Не все фото отправлены. ${errors.join(" | ")}`;
       setPhotoStatus(message, "error");
       setMessage($("#form-message"), message, "error");
+      traceOfflineDraftPhotoSync("finished", { localId, serverMeasurementId, reason: "some_photos_failed", total: photos.length, synced: finalSynced, failed, errors });
     }
     return { total: photos.length, synced: finalSynced, failed, errors };
   } finally {
@@ -972,27 +1079,55 @@ async function syncOfflineDraftPhotos(localId, options = {}) {
 }
 
 async function syncOfflineDraft(localId) {
+  traceOfflineDraftPhotoSync("measurement sync function entered", { localId, function_name: "syncOfflineDraft" });
   if (!navigator.onLine || !supabaseClient || !state.user) {
+    traceOfflineDraftPhotoSync("measurement sync early return", {
+      localId,
+      reason: "sync_unavailable",
+      navigator_onLine: navigator.onLine,
+      has_supabase_client: Boolean(supabaseClient),
+      has_user: Boolean(state.user),
+    });
     setMessage($("#form-message"), offlineDraftActionNote({ sync_status: "local_only" }) || OFFLINE_SYNC_UNAVAILABLE_MESSAGE, "error");
     refreshOfflineDraftNotice();
     return null;
   }
-  if (state.offlineSyncInFlight.has(localId)) return null;
+  if (state.offlineSyncInFlight.has(localId)) {
+    traceOfflineDraftPhotoSync("measurement sync early return", { localId, reason: "already_in_flight" });
+    return null;
+  }
   if (state.selected?.local_id === localId && canEditLocalOfflineDraft()) await saveLocalOfflineDraftNow({ silent: true });
 
   const draft = await window.TeksturaOfflineDB?.getOfflineDraft?.(localId);
-  if (!draft) return setMessage($("#form-message"), "Локальный черновик не найден в этом телефоне.", "error");
-  if (draft.sync_status === "syncing") return setMessage($("#form-message"), "Синхронизация уже выполняется...", "error");
+  traceOfflineDraftPhotoSync("measurement sync draft loaded", {
+    localId,
+    draft_found: Boolean(draft),
+    draft_server_id: draft?.server_id || null,
+    draft_sync_status: draft?.sync_status || null,
+  });
+  if (!draft) {
+    traceOfflineDraftPhotoSync("measurement sync early return", { localId, reason: "draft_not_found" });
+    return setMessage($("#form-message"), "Локальный черновик не найден в этом телефоне.", "error");
+  }
+  if (draft.sync_status === "syncing") {
+    traceOfflineDraftPhotoSync("measurement sync early return", { localId, reason: "draft_syncing" });
+    return setMessage($("#form-message"), "Синхронизация уже выполняется...", "error");
+  }
   if (draft.server_id || draft.sync_status === "synced") {
+    traceOfflineDraftPhotoSync("measurement already synced; delegating to photo sync", { localId, serverMeasurementId: draft.server_id || null, draft_sync_status: draft.sync_status || null });
     const result = await syncOfflineDraftPhotos(localId);
     if (!result?.failed) {
       await openSyncedOfflineDraft(draft);
       const number = draft.server_number || draft.server_id || "без номера";
       setMessage($("#form-message"), `Этот черновик уже синхронизирован: ${number}`, "ok");
     }
+    traceOfflineDraftPhotoSync("measurement sync early return", { localId, reason: "measurement_already_synced_branch_finished", photo_sync_result: result || null });
     return state.selected;
   }
-  if (!canSyncOfflineDraft(draft)) return setMessage($("#form-message"), "Этот локальный черновик сейчас нельзя синхронизировать.", "error");
+  if (!canSyncOfflineDraft(draft)) {
+    traceOfflineDraftPhotoSync("measurement sync early return", { localId, reason: "canSyncOfflineDraft_false" });
+    return setMessage($("#form-message"), "Этот локальный черновик сейчас нельзя синхронизировать.", "error");
+  }
 
   state.offlineSyncInFlight.add(localId);
   let clientId = null;
@@ -3541,12 +3676,37 @@ function bind() {
   $("#offline-retry-btn")?.addEventListener("click", () => refreshAppData().catch((e) => showOfflineState(userFacingError(e))));
   $("#create-offline-draft-btn")?.addEventListener("click", () => createLocalOfflineDraft().catch((e) => setMessage($("#form-message"), userFacingError(e), "error")));
   $("#offline-drafts-list")?.addEventListener("click", (event) => {
-    const syncId = event.target.closest("[data-sync-offline-draft]")?.dataset.syncOfflineDraft;
-    const photoSyncId = event.target.closest("[data-sync-offline-photos]")?.dataset.syncOfflinePhotos;
-    const openId = event.target.closest("[data-open-offline-draft]")?.dataset.openOfflineDraft;
-    const deleteId = event.target.closest("[data-delete-offline-draft]")?.dataset.deleteOfflineDraft;
-    if (syncId) syncOfflineDraft(syncId).catch((e) => setMessage($("#form-message"), userFacingError(e), "error"));
-    if (photoSyncId) syncOfflineDraftPhotos(photoSyncId).catch((e) => setMessage($("#form-message"), userFacingError(e), "error"));
+    const syncButton = event.target.closest("[data-sync-offline-draft]");
+    const photoSyncButton = event.target.closest("[data-sync-offline-photos]");
+    const openButton = event.target.closest("[data-open-offline-draft]");
+    const deleteButton = event.target.closest("[data-delete-offline-draft]");
+    const syncId = syncButton?.dataset.syncOfflineDraft;
+    const photoSyncId = photoSyncButton?.dataset.syncOfflinePhotos;
+    const openId = openButton?.dataset.openOfflineDraft;
+    const deleteId = deleteButton?.dataset.deleteOfflineDraft;
+    traceOfflineDraftPhotoSync("offline drafts delegated click", {
+      target_tag: event.target?.tagName || null,
+      target_text: event.target?.textContent?.trim() || null,
+      syncId: syncId || null,
+      photoSyncId: photoSyncId || null,
+      openId: openId || null,
+      deleteId: deleteId || null,
+      will_call: photoSyncId ? "syncOfflineDraftPhotos" : (syncId ? "syncOfflineDraft" : (openId ? "openOfflineDraft" : (deleteId ? "deleteLocalOfflineDraft" : null))),
+    });
+    if (syncId) {
+      traceOfflineDraftPhotoSync("measurement sync button clicked", { localId: syncId, will_call: "syncOfflineDraft" });
+      syncOfflineDraft(syncId).catch((e) => {
+        traceOfflineDraftPhotoSync("measurement sync handler caught error", { localId: syncId, error: e });
+        setMessage($("#form-message"), userFacingError(e), "error");
+      });
+    }
+    if (photoSyncId) {
+      traceOfflineDraftPhotoSync("photo sync button clicked", { localId: photoSyncId, will_call: "syncOfflineDraftPhotos" });
+      syncOfflineDraftPhotos(photoSyncId).catch((e) => {
+        traceOfflineDraftPhotoSync("photo sync handler caught error", { localId: photoSyncId, error: e });
+        setMessage($("#form-message"), userFacingError(e), "error");
+      });
+    }
     if (openId) openOfflineDraft(openId).catch((e) => setMessage($("#form-message"), userFacingError(e), "error"));
     if (deleteId) deleteLocalOfflineDraft(deleteId).catch((e) => setMessage($("#form-message"), userFacingError(e), "error"));
   });

@@ -1,4 +1,4 @@
-const CACHE_VERSION = "tekstura-offline-shell-v32";
+const CACHE_VERSION = "tekstura-offline-shell-v33";
 const APP_SHELL_CACHE = `${CACHE_VERSION}-app-shell`;
 const OFFLINE_FALLBACK_URLS = [
   "/offline-fallback.html",
@@ -50,8 +50,8 @@ const APP_SHELL_URLS = [
   "./offline-test.html",
   "/styles.css?v=20260518-trash-bulk",
   "./styles.css?v=20260518-trash-bulk",
-  "/app.js?v=20260626-pr81-app-js-v3",
-  "./app.js?v=20260626-pr81-app-js-v3",
+  "/app.js?v=20260626-pr82-app-js-v1",
+  "./app.js?v=20260626-pr82-app-js-v1",
   "/offline-db.js?v=20260517-v4",
   "./offline-db.js?v=20260517-v4",
   "/vendor/supabase-js.js",
@@ -76,8 +76,8 @@ const REQUIRED_APP_SHELL_URLS = new Set([
   "./offline-test.html",
   "/styles.css?v=20260518-trash-bulk",
   "./styles.css?v=20260518-trash-bulk",
-  "/app.js?v=20260626-pr81-app-js-v3",
-  "./app.js?v=20260626-pr81-app-js-v3",
+  "/app.js?v=20260626-pr82-app-js-v1",
+  "./app.js?v=20260626-pr82-app-js-v1",
   "/offline-db.js?v=20260517-v4",
   "./offline-db.js?v=20260517-v4",
   "/vendor/supabase-js.js",
@@ -183,7 +183,7 @@ async function networkFirst(request) {
     if (response.ok) await cache.put(request, response.clone());
     return response;
   } catch (error) {
-    const cached = await cache.match(request, { ignoreSearch: true });
+    const cached = await cache.match(request) || await cache.match(request, { ignoreSearch: true });
     if (cached) return cached;
     if (isNavigationRequest(request)) {
       return await cachedNavigationFallback(cache, request) || offlineFallbackResponse();
@@ -277,7 +277,7 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (request.destination === "script" || request.destination === "style") {
-    event.respondWith(cacheFirst(request));
+    event.respondWith(networkFirst(request));
     return;
   }
 

@@ -101,8 +101,8 @@
 
     <script>
       (function() {
-        var EXPECTED_CACHE = "tekstura-offline-shell-v32-app-shell";
-        var APP_JS_QUERY = "20260626-pr81-app-js-v3";
+        var EXPECTED_CACHE = "tekstura-offline-shell-v33-app-shell";
+        var APP_JS_QUERY = "20260626-pr82-app-js-v1";
         var CHECK_KEYS = [
           "/",
           "./",
@@ -136,6 +136,27 @@
 
         function stateOf(worker) {
           return worker ? worker.state : "нет";
+        }
+
+        async function readAppJsConstants() {
+          try {
+            var response = await fetch("./app.js?v=" + APP_JS_QUERY, { cache: "no-store" });
+            var source = await response.text();
+            return {
+              ok: response.ok,
+              status: response.status,
+              cacheName: (source.match(/OFFLINE_SHELL_CACHE_NAME\s*=\s*"([^"]+)"/) || [])[1] || "не найдено",
+              version: (source.match(/TEKSTURA_APP_JS_VERSION\s*=\s*"([^"]+)"/) || [])[1] || "не найдено"
+            };
+          } catch (error) {
+            return {
+              ok: false,
+              status: "ошибка",
+              cacheName: "не прочитан",
+              version: "не прочитан",
+              error: error && error.message ? error.message : String(error)
+            };
+          }
         }
 
         async function registerServiceWorker() {
@@ -197,6 +218,7 @@
           var appShellCacheNames = cacheNames.filter(function(name) {
             return name.indexOf("tekstura-offline-shell-") === 0;
           });
+          var appJsConstants = await readAppJsConstants();
           var expectedCache = "caches" in window ? await caches.open(EXPECTED_CACHE) : null;
           var checked = [];
 
@@ -226,6 +248,7 @@
             generatedAt: new Date().toISOString(),
             expectedCacheName: EXPECTED_CACHE,
             appJsQuery: APP_JS_QUERY,
+            appJsConstants: appJsConstants,
             locationHref: location.href,
             locationOrigin: location.origin,
             navigatorOnline: navigator.onLine,
@@ -253,6 +276,7 @@
             : "нет";
           document.getElementById("summary").innerHTML =
             "<p><b>Expected cache:</b> " + report.expectedCacheName + "</p>" +
+            "<p><b>app.js:</b> query=" + report.appJsQuery + " · version=" + report.appJsConstants.version + " · expectedCache=" + report.appJsConstants.cacheName + "</p>" +
             "<p><b>Location:</b> " + report.locationHref + "</p>" +
             "<p><b>Online:</b> " + text(report.navigatorOnline) + " · <b>Service worker:</b> " + text(report.serviceWorkerSupported) + " · <b>Controlled:</b> " + text(report.pageControlled) + "</p>" +
             "<p><b>Registration:</b> attempted=" + text(report.registrationAttempted) + " · ok=" + text(report.registrationOk) + (report.registrationError ? " · error=" + report.registrationError : "") + "</p>" +

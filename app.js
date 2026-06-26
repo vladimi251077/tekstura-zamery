@@ -11,7 +11,8 @@ const PHOTO_DRAFT_SAVE_REQUIRED_MESSAGE = "Фото не загружено: с�
 const PHOTO_UPLOAD_OFFLINE_MESSAGE = "Фото нельзя загрузить без интернета. В TEMP-черновике фото сохраняются в телефоне и отправятся при синхронизации.";
 const OFFLINE_SYNC_UNAVAILABLE_MESSAGE = "Появится интернет — можно будет синхронизировать.";
 const OFFLINE_SYNC_ERROR_MESSAGE = "Не удалось синхронизировать. Черновик сохранён в телефоне, попробуйте ещё раз.";
-const OFFLINE_SHELL_CACHE_NAME = "tekstura-offline-shell-v32-app-shell";
+const TEKSTURA_APP_JS_VERSION = "20260626-pr82-app-js-v1";
+const OFFLINE_SHELL_CACHE_NAME = "tekstura-offline-shell-v33-app-shell";
 const SUPABASE_CONNECTING_MESSAGE = "Подключаюсь к Supabase...";
 const SUPABASE_REFRESHING_MESSAGE = "Обновляю данные...";
 const PERMANENT_DELETE_PASSWORD = "del2525";
@@ -347,6 +348,8 @@ async function buildOfflineHealthcheckReport() {
   ].filter(Boolean);
   return [
     `Expected cache: ${OFFLINE_SHELL_CACHE_NAME}`,
+    `App JS version: ${TEKSTURA_APP_JS_VERSION}`,
+    `App JS script: ${document.currentScript?.src || Array.from(document.scripts).find((script) => script.src.includes("/app.js"))?.src || "нет"}`,
     `Caches: ${cacheNames.length ? cacheNames.join(", ") : "нет"}`,
     `Manifest: ${manifestInfo}`,
     `Display mode standalone: ${window.matchMedia?.("(display-mode: standalone)")?.matches ? "да" : "нет"}`,

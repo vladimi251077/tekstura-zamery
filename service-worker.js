@@ -1,4 +1,4 @@
-const CACHE_VERSION = "tekstura-offline-shell-v31";
+const CACHE_VERSION = "tekstura-offline-shell-v32";
 const APP_SHELL_CACHE = `${CACHE_VERSION}-app-shell`;
 const OFFLINE_FALLBACK_URLS = [
   "/offline-fallback.html",
@@ -50,8 +50,8 @@ const APP_SHELL_URLS = [
   "./offline-test.html",
   "/styles.css?v=20260518-trash-bulk",
   "./styles.css?v=20260518-trash-bulk",
-  "/app.js?v=20260604-runtime-error-fallback-v2",
-  "./app.js?v=20260604-runtime-error-fallback-v2",
+  "/app.js?v=20260626-pr81-app-js-v2",
+  "./app.js?v=20260626-pr81-app-js-v2",
   "/offline-db.js?v=20260517-v4",
   "./offline-db.js?v=20260517-v4",
   "/vendor/supabase-js.js",
@@ -76,8 +76,8 @@ const REQUIRED_APP_SHELL_URLS = new Set([
   "./offline-test.html",
   "/styles.css?v=20260518-trash-bulk",
   "./styles.css?v=20260518-trash-bulk",
-  "/app.js?v=20260604-runtime-error-fallback-v2",
-  "./app.js?v=20260604-runtime-error-fallback-v2",
+  "/app.js?v=20260626-pr81-app-js-v2",
+  "./app.js?v=20260626-pr81-app-js-v2",
   "/offline-db.js?v=20260517-v4",
   "./offline-db.js?v=20260517-v4",
   "/vendor/supabase-js.js",

@@ -518,7 +518,7 @@ function isOfflinePhotoPendingSync(photo = {}) {
 
 function offlinePhotoTraceDetails(photo = {}, serverMeasurementId = null) {
   const syncedForMeasurement = isOfflinePhotoSynced(photo) && String(photo.server_measurement_id || photo.measurement_id) === String(serverMeasurementId);
-  const allowedStatus = photo.sync_status === "local_only" || photo.sync_status === "sync_error" || photo.sync_status === "synced";
+  const allowedStatus = photo.sync_status === "local_only" || photo.sync_status === "sync_error" || photo.sync_status === "syncing" || photo.sync_status === "synced";
   const excludedReasons = [];
   if (syncedForMeasurement) excludedReasons.push("already_synced_for_server_measurement_id");
   if (!allowedStatus) excludedReasons.push(`sync_status_not_queued:${photo.sync_status || "empty"}`);
@@ -964,7 +964,10 @@ async function syncOfflineDraftPhotos(localId, options = {}) {
   });
   const photosToSync = photos.filter((photo) => {
     if (isOfflinePhotoSynced(photo) && String(photo.server_measurement_id || photo.measurement_id) === String(serverMeasurementId)) return false;
-    return photo.sync_status === "local_only" || photo.sync_status === "sync_error" || photo.sync_status === "synced";
+    return photo.sync_status === "local_only"
+      || photo.sync_status === "sync_error"
+      || photo.sync_status === "syncing"
+      || photo.sync_status === "synced";
   });
   traceOfflineDraftPhotoSync("photosToSync calculated", {
     localId,

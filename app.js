@@ -11,8 +11,8 @@ const PHOTO_DRAFT_SAVE_REQUIRED_MESSAGE = "Фото не загружено: с�
 const PHOTO_UPLOAD_OFFLINE_MESSAGE = "Фото нельзя загрузить без интернета. В TEMP-черновике фото сохраняются в телефоне и отправятся при синхронизации.";
 const OFFLINE_SYNC_UNAVAILABLE_MESSAGE = "Появится интернет — можно будет синхронизировать.";
 const OFFLINE_SYNC_ERROR_MESSAGE = "Не удалось синхронизировать. Черновик сохранён в телефоне, попробуйте ещё раз.";
-const TEKSTURA_APP_JS_VERSION = "20260626-pr82-app-js-v1";
-const OFFLINE_SHELL_CACHE_NAME = "tekstura-offline-shell-v33-app-shell";
+const TEKSTURA_APP_JS_VERSION = "20260626-pr83-photo-sync-diagnostics-v1";
+const OFFLINE_SHELL_CACHE_NAME = "tekstura-offline-shell-v34-app-shell";
 const SUPABASE_CONNECTING_MESSAGE = "Подключаюсь к Supabase...";
 const SUPABASE_REFRESHING_MESSAGE = "Обновляю данные...";
 const PERMANENT_DELETE_PASSWORD = "del2525";
@@ -516,18 +516,33 @@ function isOfflinePhotoPendingSync(photo = {}) {
   return !isOfflinePhotoSynced(photo) && (photo.sync_status === "local_only" || photo.sync_status === "sync_error" || photo.sync_status === "syncing");
 }
 
+function isOfflinePhotoQueuedForSync(photo = {}) {
+  return ["local_only", "sync_error", "syncing", "synced"].includes(photo.sync_status);
+}
+
 function offlinePhotoTraceDetails(photo = {}, serverMeasurementId = null) {
   const syncedForMeasurement = isOfflinePhotoSynced(photo) && String(photo.server_measurement_id || photo.measurement_id) === String(serverMeasurementId);
-  const allowedStatus = photo.sync_status === "local_only" || photo.sync_status === "sync_error" || photo.sync_status === "synced";
+  const allowedStatus = isOfflinePhotoQueuedForSync(photo);
+  const hasBlob = Boolean(photo.blob);
+  const hasServerFilePath = Boolean(photo.server_file_path);
   const excludedReasons = [];
   if (syncedForMeasurement) excludedReasons.push("already_synced_for_server_measurement_id");
   if (!allowedStatus) excludedReasons.push(`sync_status_not_queued:${photo.sync_status || "empty"}`);
   return {
     local_photo_id: photo.local_photo_id || null,
+    local_draft_id: photo.local_draft_id || null,
+    file_name: photo.file_name || null,
+    mime_type: photo.mime_type || null,
+    size_bytes: Number(photo.size_bytes || photo.blob?.size || 0),
     sync_status: photo.sync_status || null,
     measurement_id: photo.measurement_id || null,
     server_measurement_id: photo.server_measurement_id || null,
     server_file_path: photo.server_file_path || null,
+    has_blob: hasBlob,
+    blob_size: photo.blob?.size || null,
+    has_local_uri: Boolean(photo.localUri || photo.local_uri),
+    has_server_file_path: hasServerFilePath,
+    expected_storage_path: serverMeasurementId ? offlinePhotoStoragePath(photo, serverMeasurementId) : null,
     is_offline_photo_synced: isOfflinePhotoSynced(photo),
     synced_for_server_measurement_id: syncedForMeasurement,
     allowed_status_for_queue: allowedStatus,
@@ -962,18 +977,23 @@ async function syncOfflineDraftPhotos(localId, options = {}) {
     local_photos_count: photos.length,
     photos: photos.map((photo) => offlinePhotoTraceDetails(photo, serverMeasurementId)),
   });
-  const photosToSync = photos.filter((photo) => {
-    if (isOfflinePhotoSynced(photo) && String(photo.server_measurement_id || photo.measurement_id) === String(serverMeasurementId)) return false;
-    return photo.sync_status === "local_only" || photo.sync_status === "sync_error" || photo.sync_status === "synced";
+  const photoQueueDecisions = photos.map((photo) => {
+    const details = offlinePhotoTraceDetails(photo, serverMeasurementId);
+    const shouldSync = !details.synced_for_server_measurement_id && details.allowed_status_for_queue;
+    return {
+      ...details,
+      should_sync: shouldSync,
+      decision_reason: shouldSync ? "queued_for_sync" : details.excluded_from_queue_reasons.join(",") || "not_queued",
+    };
   });
+  const photosToSync = photos.filter((photo) => photoQueueDecisions.some((decision) => decision.local_photo_id === photo.local_photo_id && decision.should_sync));
   traceOfflineDraftPhotoSync("photosToSync calculated", {
     localId,
     serverMeasurementId,
     photos_to_sync_count: photosToSync.length,
+    queue_decisions: photoQueueDecisions,
     photos_to_sync: photosToSync.map((photo) => offlinePhotoTraceDetails(photo, serverMeasurementId)),
-    excluded_photos: photos
-      .filter((photo) => !photosToSync.includes(photo))
-      .map((photo) => offlinePhotoTraceDetails(photo, serverMeasurementId)),
+    excluded_photos: photoQueueDecisions.filter((decision) => !decision.should_sync),
   });
   let synced = photos.filter((photo) => isOfflinePhotoSynced(photo) && String(photo.server_measurement_id || photo.measurement_id) === String(serverMeasurementId)).length;
   let failed = 0;
@@ -1005,13 +1025,17 @@ async function syncOfflineDraftPhotos(localId, options = {}) {
         const filePath = photo.server_file_path || offlinePhotoStoragePath(photo, serverMeasurementId);
         if (!photo.server_file_path) {
           const blob = photo.blob;
-          if (!blob) throw new Error("Локальный файл фото не найден в IndexedDB.");
-          traceOfflineDraftPhotoSync("upload started", { localId, local_photo_id: photo.local_photo_id, bucket: storageBucket, filePath, contentType: photo.mime_type || blob.type || "image/jpeg", blob_size: blob.size || null });
-          const { error: uploadError } = await supabaseClient.storage.from(storageBucket).upload(filePath, blob, {
+          if (!blob) {
+            traceOfflineDraftPhotoSync("photo skipped with error", { localId, local_photo_id: photo.local_photo_id, reason: "missing_blob_in_indexeddb", photo: offlinePhotoTraceDetails(photo, serverMeasurementId) });
+            throw new Error("Локальный файл фото не найден в IndexedDB.");
+          }
+          traceOfflineDraftPhotoSync("upload started", { localId, local_photo_id: photo.local_photo_id, bucket: storageBucket, filePath, contentType: photo.mime_type || blob.type || "image/jpeg", blob_size: blob.size || null, calls_supabase_storage_upload: true });
+          const uploadResponse = await supabaseClient.storage.from(storageBucket).upload(filePath, blob, {
             contentType: photo.mime_type || blob.type || "image/jpeg",
             upsert: false,
           });
-          traceOfflineDraftPhotoSync("upload returned", { localId, local_photo_id: photo.local_photo_id, filePath, has_error: Boolean(uploadError), error: uploadError || null });
+          const uploadError = uploadResponse?.error;
+          traceOfflineDraftPhotoSync("upload returned", { localId, local_photo_id: photo.local_photo_id, filePath, has_error: Boolean(uploadError), data: uploadResponse?.data || null, error: uploadError || null, raw_response: uploadResponse });
           if (uploadError) throw new Error(formatOfflinePhotoSyncError("Storage upload", uploadError, { bucket: storageBucket, path: filePath, measurementId: serverMeasurementId }));
           photo = await updateOfflinePhotoSyncFields(photo, { server_file_path: filePath, measurement_id: serverMeasurementId, server_measurement_id: serverMeasurementId });
           traceOfflineDraftPhotoSync("photo server fields saved", { localId, local_photo_id: photo.local_photo_id, photo: offlinePhotoTraceDetails(photo, serverMeasurementId) });

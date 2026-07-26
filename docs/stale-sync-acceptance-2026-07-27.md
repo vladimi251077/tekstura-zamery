@@ -118,7 +118,9 @@ Cleanup followed the documented order:
 5. deleted the synthetic Auth user;
 6. restored the staging environment file from the pre-test backup;
 7. force-recreated only the Auth service;
-8. stopped the local HTTP server and SSH tunnel.
+8. cleared the temporary localhost IndexedDB, Cache Storage, and service-worker registration;
+9. stopped the local HTTP server and SSH tunnel;
+10. removed the temporary local app/credential directory and the remote pre-test backup after restoration was verified.
 
 Post-cleanup verification:
 

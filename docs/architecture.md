@@ -11,7 +11,8 @@ Tekstura Замеры — статическое PWA-приложение на H
 Основной поток:
 
 1. Пользователь открывает `index.html`.
-2. Подключаются стили, Supabase client, `offline-db.js`, `app.js` и вспомогательные скрипты.
+2. Подключаются стили, Supabase client, `offline-db.js`, `photo-path.js`, `sync-state.js`,
+   `app.js` и вспомогательные скрипты.
 3. `app.js` инициализирует авторизацию, профиль, список замеров и UI.
 4. Замеры, клиенты и фото читаются/пишутся в Supabase.
 5. Service worker кэширует app shell для offline-start.

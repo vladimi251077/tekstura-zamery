@@ -814,6 +814,25 @@ Exit criteria:
 риски с первым path fix. Первый будущий PR, который затрагивает SVG subsystem, разрешён только
 после добавления описанного 12-variant fixture harness и owner review baseline.
 
+## Phase A follow-up: stale-sync recovery
+
+Реализовано отдельной focused-веткой после merge PR #88 и успешной изолированной acceptance:
+
+- единый state contract вынесен в `sync-state.js`;
+- stale timeout установлен в 5 минут;
+- legacy `syncing` без attempt timestamp восстанавливается как retryable после restart;
+- серверный номер TEMP-замера сохраняется до первого запроса и переиспользуется;
+- client и measurement сверяются до insert;
+- Storage object и `measurement_photos` row сверяются по точным идентификаторам до повторной
+  записи;
+- операции одного замера сериализуются, разные замеры не блокируют друг друга;
+- server association фото с другим замером не перепривязывается;
+- добавлен deterministic `node:test` suite.
+
+Изменение не включает Supabase migration, RLS/Auth/environment mutation, deploy или SVG runtime.
+После merge остаётся отдельная owner-approved staging acceptance: прервать синхронизацию после
+server acceptance, перезапустить PWA и подтвердить reconciliation без дубликатов.
+
 ## Owner action
 
 До runtime-работы owner должен подтвердить:

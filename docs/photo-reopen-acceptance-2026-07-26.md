@@ -6,92 +6,110 @@
 
 ## Результат
 
-Статус: **BLOCKED — backend acceptance не запускался**.
+Статус: **PASS**.
 
-Изолированный TEMP → sync → reopen сценарий нельзя безопасно выполнить в текущем окружении.
-Репозиторий и доступные подключения не содержат owner-approved Zamery staging/test backend.
-Создание замера или загрузка фото через текущий browser runtime затронули бы активный Supabase
-project, используемый приложением.
+На существующем owner-approved self-hosted Supabase staging выполнен полный изолированный сценарий:
 
-Поэтому не создавались:
+```text
+TEMP-001
+→ одно synthetic фото
+→ sync measurement + photo
+→ reload/reopen editor
+→ production view
+→ signed URL
+→ SVG save/reopen
+→ полный cleanup
+```
 
-- synthetic client или measurement row;
-- строка `measurement_photos`;
-- offline/TEMP photo для последующей отправки;
-- Storage object;
-- Auth user или session;
-- deployment или production configuration.
+Cloud Supabase, production configuration, реальные клиенты, `tekstura.shop`, рабочий сайт и
+tracked SVG runtime не изменялись.
 
-## Проверенная исходная точка
+## Изоляция
 
-- локальный `main` чистый и совпадает с `origin/main`;
-- merge commit PR #88 присутствует;
-- общий `photo-path.js` подключён в main editor и production view;
-- merged regression fixtures проходят: 8/8;
-- `node --check` проходит для `photo-path.js`, `app.js`, `production.js` и
-  `service-worker.js`;
-- PR #88 не изменил SVG runtime files.
+- target: `tekstura-supabase-staging` на `homelab`;
+- gateway оставался только на `127.0.0.1:18000`;
+- браузер подключался через временный SSH loopback tunnel;
+- приложение запускалось из временной локальной копии;
+- временная копия использовала private bucket `zamery-measurement-photos-test`;
+- создан один marked test Auth user;
+- создан ровно один synthetic client, measurement, photo row и Storage object;
+- production URL/key в tracked `app.js` и `production.js` не менялись;
+- публичный Supabase ingress не создавался.
 
-Эти проверки подтверждают merged code и regression contract, но не заменяют browser/backend
-acceptance с реальным изолированным signed URL.
+## Acceptance evidence
 
-## Аудит безопасного acceptance path
+Synthetic measurement:
 
-Найденный локальный путь `python3 -m http.server 4173` безопасен только для проверки статического
-app shell без входа. Он не предоставляет локальные Auth, PostgREST и Storage, поэтому не может
-проверить TEMP synchronization, signed URL или production view для синхронизированного замера.
+- number: `KZN-ZM-2026-998680`;
+- id: `94e69ead-8e33-4ed9-bcf3-6bcdb76f4a39`;
+- photo path:
+  `measurements/94e69ead-8e33-4ed9-bcf3-6bcdb76f4a39/photo_local_9bc4e9fa-7493-416a-8134-d4b6c3a53bcc.jpg`.
 
-Не найдены:
+| Проверка | Результат |
+|---|---|
+| TEMP measurement создан | PASS |
+| Ровно одно TEMP фото добавлено | PASS |
+| TEMP measurement синхронизирован | PASS |
+| TEMP photo sync | `1 из 1` |
+| Pending/syncing после завершения | нет |
+| Server client / measurement / photo row / object | `1 / 1 / 1 / 1` |
+| Editor photo после reload/reopen | PASS, одна карточка |
+| Editor image | PASS, `192×192` |
+| Production photo | PASS, одна карточка |
+| Production image | PASS, `192×192` |
+| Signed URL | PASS, HTTP 200 `image/jpeg` |
+| Duplicate photo entries | нет |
+| Cross-measurement leakage | нет; isolated dataset содержал один measurement/row/object |
+| Editor SVG после второго reopen | PASS, 111 элементов, `viewBox="0 0 1100 760"` |
+| Production SVG после reload | PASS, 111 элементов, `viewBox="0 0 1100 760"` |
 
-- `supabase/config.toml` и локальный Supabase stack;
-- staging-specific app configuration;
-- staging deployment manifest или documented staging URL;
-- owner-approved test account/project;
-- документированная безопасная cleanup procedure для synthetic rows и Storage objects.
+Первый production open корректно показал пустой `drawing_svg`, потому что TEMP был синхронизирован
+до первого открытия вкладки размеров. После штатных drawing Save и form Save второй reopen в editor
+и production отрисовал сохранённый SVG. Исходники renderer, формулы, размерные линии, labels,
+scaling, redraw, print и export не менялись.
 
-Доступный активный Supabase project является тем же project, который напрямую настроен в
-`app.js` и `production.js`. Другой доступный project неактивен и не документирован как Zamery
-test environment. Он не активировался и не изменялся.
+## Auth prerequisite
 
-## Acceptance matrix
+Self-hosted staging изначально вернул `email_provider_disabled`. Для единственного approved test
+user был временно включён только staging email/password provider:
 
-| Проверка | Статус | Причина |
-|---|---|---|
-| Synthetic TEMP measurement | NOT RUN | нет approved isolated backend |
-| Exactly one TEMP photo | NOT RUN | Storage write небезопасен без isolation |
-| TEMP photo synchronization | NOT RUN | потребовал бы mutation активного backend |
-| Editor reopen photo visible | UNKNOWN | scenario не создан |
-| Production photo visible | UNKNOWN | scenario не создан |
-| Duplicate gallery entries | UNKNOWN | только regression fixture PASS |
-| Cross-measurement leakage | UNKNOWN | только regression fixture PASS |
-| Pending/syncing recovery | UNKNOWN | backend flow не запускался |
-| Signed URL resolves | UNKNOWN | synthetic Storage object не создавался |
-| Measurement SVG after reopen | UNKNOWN | synthetic measurement не создавался |
-| Synthetic cleanup | NOT SAFE | synthetic data не создавались; cleanup contract отсутствует |
+- restricted env предварительно сохранён с mode `0600`;
+- пересоздан только staging Auth container;
+- остальные container identities не изменились;
+- browser signup оставался disabled;
+- после acceptance исходный env восстановлен byte-for-byte;
+- Auth пересоздан, provider снова disabled, все services healthy.
 
-## Точный prerequisite для разблокировки
+## Cleanup
 
-Owner должен предоставить и явно одобрить один из вариантов:
+Удалены только записанные synthetic identifiers:
 
-1. отдельный Supabase staging/test project с Zamery schema, RLS, Auth test credentials,
-   `measurement-photos` bucket, staging app configuration/URL и cleanup procedure; или
-2. воспроизводимый локальный Supabase stack с теми же schema/policies, локальным test user,
-   Storage bucket и инструкцией запуска приложения против local endpoints.
+1. локальная TEMP-копия и локальное фото;
+2. один Storage object через Storage API;
+3. private test bucket после подтверждения zero objects;
+4. четыре временные Zamery tables и `zamery_test_%` policies guarded SQL cleanup;
+5. один marked Auth user;
+6. временная app copy и credentials;
+7. локальный HTTP server, SSH tunnel и browser tabs.
 
-После этого выполнить ровно один synthetic сценарий:
+Финальная проверка:
 
-1. создать TEMP measurement и одно synthetic photo;
-2. синхронизировать;
-3. записать server measurement id, photo row id и Storage path без секретов;
-4. reload/reopen в editor и production view;
-5. проверить одну gallery entry, отсутствие leakage/stuck state, signed URL и SVG;
-6. удалить только записанные synthetic ids/objects по approved cleanup procedure;
-7. приложить обезличенные screenshots и итоговый evidence matrix.
+- Zamery test tables: 0;
+- Zamery policies: 0;
+- marked Auth users: 0;
+- test buckets/objects: 0/0;
+- исходные website tables: 8;
+- `project-photos-staging`: сохранён;
+- staging services: 10 healthy, 0 unhealthy, 0 restarts;
+- gateway: loopback-only;
+- `tekstura.shop` и `/calculator`: HTTP 200;
+- real customer data touched: no;
+- tracked SVG runtime changed: no.
 
-## Safety confirmation
+## Решение
 
-- real customer data не читались и не изменялись;
-- Supabase schema, RLS, Auth users и environment values не изменялись;
-- Storage objects не создавались, не перемещались и не удалялись;
-- production configuration и deployment не изменялись;
-- SVG runtime files и drawing behavior не изменялись.
+Photo reopen compatibility PR #88 принят для TEMP sync path
+`measurements/<measurement-id>/...` в main editor и production view.
+
+Следующая безопасная задача: отдельный focused PR для recovery measurement-level stale `syncing`
+и idempotency design без SVG изменений.

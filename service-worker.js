@@ -1,4 +1,4 @@
-const CACHE_VERSION = "tekstura-offline-shell-v34";
+const CACHE_VERSION = "tekstura-offline-shell-v35";
 const APP_SHELL_CACHE = `${CACHE_VERSION}-app-shell`;
 const OFFLINE_FALLBACK_URLS = [
   "/offline-fallback.html",
@@ -50,8 +50,10 @@ const APP_SHELL_URLS = [
   "./offline-test.html",
   "/styles.css?v=20260518-trash-bulk",
   "./styles.css?v=20260518-trash-bulk",
-  "/app.js?v=20260626-pr82-app-js-v1",
-  "./app.js?v=20260626-pr82-app-js-v1",
+  "/photo-path.js?v=20260726-phase-a",
+  "./photo-path.js?v=20260726-phase-a",
+  "/app.js?v=20260726-photo-reopen",
+  "./app.js?v=20260726-photo-reopen",
   "/offline-db.js?v=20260517-v4",
   "./offline-db.js?v=20260517-v4",
   "/vendor/supabase-js.js",
@@ -76,8 +78,10 @@ const REQUIRED_APP_SHELL_URLS = new Set([
   "./offline-test.html",
   "/styles.css?v=20260518-trash-bulk",
   "./styles.css?v=20260518-trash-bulk",
-  "/app.js?v=20260626-pr82-app-js-v1",
-  "./app.js?v=20260626-pr82-app-js-v1",
+  "/photo-path.js?v=20260726-phase-a",
+  "./photo-path.js?v=20260726-phase-a",
+  "/app.js?v=20260726-photo-reopen",
+  "./app.js?v=20260726-photo-reopen",
   "/offline-db.js?v=20260517-v4",
   "./offline-db.js?v=20260517-v4",
   "/vendor/supabase-js.js",

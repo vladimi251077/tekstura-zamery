@@ -789,21 +789,26 @@ Exit criteria:
 
 ## Exact first implementation task
 
-Создать маленький PR **только для photo reopen compatibility**:
+Статус Phase A photo reopen compatibility: **IMPLEMENTED IN FOCUSED PR**.
 
-1. вынести pure predicate `photoPathBelongsToMeasurement(photo, measurement)` в один shared browser
-   module, используемый `app.js` и `production.js`;
-2. сохранить обязательное равенство `photo.measurement_id === measurement.id`;
-3. разрешить ровно три path families:
-   `<number>_<id>/...`, `<number>/...`, `measurements/<id>/...`;
-4. добавить unit fixtures для accepted/rejected paths, включая другой measurement id и похожие
-   prefix;
-5. добавить regression fixture для path, который создаёт `offlinePhotoStoragePath()`;
-6. не менять upload paths, Supabase, schema, Storage objects или production data;
-7. manual acceptance в isolated environment: синхронизировать одно TEMP photo, перезагрузить,
-   открыть замер в main и production view, убедиться, что фото отображается.
-8. не менять `drawing-bridge.js`, drawing formulas, SVG markup, viewBox or drawing consumers;
-   review diff должен явно подтвердить отсутствие SVG runtime changes.
+Выполнено:
+
+1. pure predicate `photoPathBelongsToMeasurement(path, measurementId)` вынесен в
+   `photo-path.js`, общий для `app.js` и `production.js`;
+2. record filtering требует точного равенства `photo.measurement_id` открытому measurement id;
+3. разрешены только `<number>_<id>/...`, `<number>/...` и `measurements/<id>/...`;
+4. `<number>/...` дополнительно требует совпадения номера открытого замера;
+5. deterministic Node fixtures покрывают accepted families, wrong id, partial collision,
+   malformed/unrelated paths, TEMP sync reopen, duplicate rows/objects и cross-measurement
+   isolation;
+6. duplicate row ids и повторяющиеся `file_path` не дублируются в reopened gallery;
+7. signed URL, upload, offline queue, Storage mutation, Supabase schema/RLS/Auth/data и production
+   data не изменены;
+8. `drawing-bridge.js`, SVG formulas, markup, dimensions, scaling, labels, redraw, persistence и
+   print behavior не изменены.
+
+Остаётся отдельным owner-operated acceptance после merge/deploy: синхронизировать одно TEMP photo
+в изолированном окружении, перезагрузить приложение и открыть замер в main и production view.
 
 После этого отдельным PR выполнить stale `syncing` recovery и idempotency design; не смешивать эти
 риски с первым path fix. Первый будущий PR, который затрагивает SVG subsystem, разрешён только

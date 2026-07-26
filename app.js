@@ -1549,21 +1549,9 @@ function renderPhotoImage(url, title, filePath) {
   </div>`;
 }
 
-function photoPathBelongsToMeasurement(photo, measurement) {
-  if (!photo || !measurement?.id) return false;
-  if (photo.measurement_id !== measurement.id) return false;
-  const path = String(photo.file_path || "");
-  if (!path) return true;
-  const number = String(measurement.number || "");
-  const strictPrefix = `${number}_${measurement.id}/`;
-  const legacyPrefix = `${number}/`;
-  // Новые фото v5+ хранятся в папке номер+id. Старые фото допускаем только если номер совпадает.
-  return path.startsWith(strictPrefix) || path.startsWith(legacyPrefix) || !number;
-}
-
 function filterPhotosForMeasurement(photos, measurement) {
   const list = Array.isArray(photos) ? photos : [];
-  const filtered = list.filter((photo) => photoPathBelongsToMeasurement(photo, measurement));
+  const filtered = window.TeksturaPhotoPaths.filterPhotoRecordsForMeasurement(list, measurement);
   state.hiddenForeignPhotos = list.length - filtered.length;
   return filtered;
 }

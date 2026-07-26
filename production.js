@@ -181,17 +181,6 @@ async function selectMeasurement(id) {
   history.replaceState(null, "", `./production.html?id=${encodeURIComponent(id)}`);
 }
 
-function photoPathBelongsToMeasurement(photo, measurement) {
-  if (!photo || !measurement?.id) return false;
-  if (photo.measurement_id !== measurement.id) return false;
-  const path = String(photo.file_path || "");
-  if (!path) return true;
-  const number = String(measurement.number || "");
-  const strictPrefix = `${number}_${measurement.id}/`;
-  const legacyPrefix = `${number}/`;
-  return path.startsWith(strictPrefix) || path.startsWith(legacyPrefix) || !number;
-}
-
 async function loadPhotos(measurement) {
   state.photos = [];
   if (!measurement?.id) return;
@@ -204,7 +193,7 @@ async function loadPhotos(measurement) {
     console.warn("Не удалось загрузить фото", error);
     return;
   }
-  const filtered = (data || []).filter((photo) => photoPathBelongsToMeasurement(photo, measurement));
+  const filtered = window.TeksturaPhotoPaths.filterPhotoRecordsForMeasurement(data || [], measurement);
   state.photos = await Promise.all(filtered.map(async (photo) => ({ ...photo, url: await signedPhotoUrl(photo.file_path) })));
 }
 

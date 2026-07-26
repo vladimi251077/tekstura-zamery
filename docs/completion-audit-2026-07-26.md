@@ -32,6 +32,10 @@
 6. Каноническая self-hosted схема `tekstura-platform` сейчас содержит восемь website/CRM/SEO
    таблиц и намеренно не содержит `profiles`, `clients`, `measurements` и
    `measurement_photos`. Текущее приложение с ней несовместимо.
+7. Рабочий SVG-конструктор является защищённым production contract. Его 12 вариантов, размерные
+   линии, подписи, значения, пропорции, redraw, save/reopen, mobile viewport и print/export пока
+   не покрыты regression fixtures. Любая миграция или переписывание renderer до появления такого
+   evidence является release blocker.
 
 До закрытия этих пунктов статус completion: **BLOCKED**.
 
@@ -169,6 +173,216 @@ production/mobile acceptance test.
 - `svg-constructor/embedded.html` не используется активным runtime.
 
 Статус: **PARTIAL**.
+
+## Обязательный SVG preservation contract
+
+Рабочие SVG-чертежи и размерная конструкция являются release blocker и должны переноситься
+без визуального или геометрического упрощения.
+
+Запрещено без regression evidence и отдельного owner approval:
+
+- заменять SVG на raster image, Canvas, статическую картинку или упрощённый renderer;
+- переписывать `drawing-bridge.js`, `buildGeometry()`, `buildWinderPolygons()`,
+  `fitTransform()`, `fitMargins()`, `renderSvg()` или formulas;
+- менять orientation, mirror/left/right semantics или порядок маршей;
+- удалять dimension extension lines, tick markers, route/ascent arrows, labels, numbers or units;
+- фиксировать width/height вместо текущего proportional `viewBox` behavior;
+- переносить только итоговый SVG без versioned `drawing_project_json` и возможности redraw;
+- считать migration complete только по тому, что SVG markup непустой.
+
+### Активные типы чертежей
+
+`drawing-bridge.js` содержит 12 активных variants:
+
+1. `empty_straight` — пустой прямой проём;
+2. `empty_l_left` — пустой Г-проём, левый;
+3. `empty_l_right` — пустой Г-проём, правый;
+4. `ready_straight` — готовая прямая лестница;
+5. `ready_l_left_landing` — Г-образная левая с площадкой;
+6. `ready_l_right_landing` — Г-образная правая с площадкой;
+7. `ready_l_left_winder` — Г-образная левая с забежными;
+8. `ready_l_right_winder` — Г-образная правая с забежными;
+9. `ready_u_landing_left` — П-образная с площадкой, старт слева;
+10. `ready_u_landing_right` — П-образная с площадкой, старт справа;
+11. `ready_u_winder_left` — П-образная с забежными, старт слева;
+12. `ready_u_winder_right` — П-образная с забежными, старт справа.
+
+Variants 4–12 рисуют готовые ступени; winder variants строят polygon envelope и отдельные
+забежные polygon steps. Left/right variants используют разные origin, pivot, flight direction и
+route, поэтому зеркальную пару нельзя считать покрытой тестом только одной стороны.
+
+### SVG generators и consumers
+
+Активный generation pipeline:
+
+- `collectParams()` — собирает размеры и step/tread dependencies;
+- `visibleParams()` — выбирает dimension matrix по empty/ready, simple/detailed и
+  straight/landing/winder;
+- `buildGeometry()` — создаёт rectangles, tread lines, dimension descriptors, routes, flight
+  directions and labels;
+- `buildWinderPolygons()` — строит envelope и отдельные забежные ступени;
+- `drawingViewport()` — выбирает desktop `1100×760`, tablet `960×780` или phone `820×1100`;
+- `fitMargins()` и `fitTransform()` — резервируют место под dimension labels и пропорционально
+  вписывают geometry через один scale;
+- `renderSvg()` — создаёт итоговый `viewBox`, grid, defs/markers и вызывает
+  `renderRect()`, `renderWinder()`, `renderLine()`, `renderRoute()`,
+  `renderDimension()`, `renderStepLabels()`, `renderWalls()`, `renderWindows()`,
+  `renderAscent()`, `renderTopBalustrade()`, `renderEdgeExtensions()` и
+  `renderObstacles()`.
+
+Активные consumers:
+
+- editor вставляет generated SVG во вкладку «Размеры»;
+- `drawing_svg` сохраняет точный serialized SVG;
+- main preview парсит SVG, добавляет safe style и восстанавливает paint;
+- production view отдельно добавляет safe style, paint и step-count labels;
+- drawing actions скачивают SVG, копируют SVG и экспортируют JSON+SVG;
+- main preview и production card поддерживают browser print.
+
+Неактивные/legacy generators, которые нельзя случайно подключить вместо active renderer:
+
+- `scheme-enhance.js` содержит отдельные hard-coded empty/straight/L/U SVG generators, но не
+  подключён в `index.html`;
+- `sizes-smart.js` содержит отдельный hard-coded `scheme()` с fixed `900×640` viewBox, но не
+  подключён;
+- `scheme-sketch.js` подключён, но renderer временно отключён;
+- `svg-constructor/embedded.html` является отдельным stub/editor entry, а не заменой active
+  drawing pipeline.
+
+### Measurement dependencies
+
+Geometry и dimension content зависят от:
+
+- `site_situation`, `opening_type`, `turn_type`, `stair_direction`;
+- `drawing_project_json.schemaVersion`, `type`, `measurementMode`, `params`, `autoCalc`,
+  `treadMode`, `walls`, `windows`, `ascent`, `topBalustrade`, `edgeExtensions`, `obstacles`,
+  `notes`, `showFields`;
+- `height_clean_to_clean_mm` → `H`;
+- `slab_thickness_mm` → `T`;
+- `opening_length_mm`, `opening_width_mm` → `L`, `W`;
+- `flight1_length_mm`, `flight1_width_mm`, `flight1_steps_count` → `M1`, `B1`, `N1`;
+- `flight2_length_mm`, `flight2_width_mm`, `flight2_steps_count` → `M2`, `B2`, `N2`;
+- `corner_zone_length_mm`, `corner_zone_width_mm`, `winder_steps_count` → `ZL`, `ZW`, `ZN`;
+- `riser_height_mm`, `tread_depth_mm`, `tread_depth_flight1_mm`,
+  `tread_depth_flight2_mm` → `h`, `b`, `b1`, `b2`;
+- `finish_dimensions_json` для чистовых ступеней, площадок, сапожков и comments.
+
+Для ready simple mode длины `M1/M2` автоматически считаются как `N×b`. В detailed ready mode
+отдельные `b1/b2` и auto-calc flags меняют geometry. Эти зависимости должны проверяться не только
+snapshot markup, но и semantic assertions.
+
+### Dimensions, arrows and labels
+
+Текущий SVG использует:
+
+- `db-tick` как start/end marker размерной линии;
+- `db-arrow` для маршрута;
+- `db-ascent-arrow` для направления подъёма;
+- extension lines, horizontal/vertical dimension lines and rotated side labels;
+- codes/values `L`, `W`, `H`, `T`, `M1`, `B1`, `N1`, `M2`, `B2`, `N2`, `ZL`, `ZW`,
+  `ZN`, `h`, `b`, `b1`, `b2`;
+- numeric values and `шт` units where the active matrix requests them;
+- step-count badges and winder step numbers;
+- site marks for walls, windows, balustrade, edge extensions and obstacles.
+
+У empty L variants часть dimension markup намеренно использует текущий `labelOnly` behavior.
+Regression fixtures должны зафиксировать его как существующий baseline; изменение или добавление
+numeric content требует отдельного UX/owner решения.
+
+### Redraw and save/reopen
+
+Redraw реализован:
+
+- input/change/focus commit вызывает `saveState()` и debounced `scheduleRender()`;
+- auto-calc sources пересчитывают lengths перед redraw;
+- смена variant/mode, walls, windows, site marks and finish fields вызывает redraw;
+- событие `tekstura:measurement-loaded` после `fillForm()` восстанавливает project/finish state и
+  перерисовывает SVG;
+- `tekstura:measurement-mode-changed`, DOMContentLoaded, window load и открытие sizes tab также
+  вызывают redraw.
+
+Save/reopen реализован через три связанных значения:
+
+- `drawing_project_json` — versioned editable source;
+- `finish_dimensions_json` — finish source;
+- `drawing_svg` — serialized current output.
+
+Они включены в online save, TEMP draft save/sync, form restore, main preview and production view.
+По статическому code path сохранение и reopen сохраняют рисунок: **YES**. Это ещё не подтверждено
+automated round-trip test или полным phone acceptance.
+
+### Proportional scale, mobile and zoom
+
+`fitTransform()` использует один `Math.min(widthScale, heightScale)`, поэтому X/Y proportions
+сохраняются. Итоговый SVG получает responsive `viewBox`; отсутствие explicit
+`preserveAspectRatio` сохраняет browser default `xMidYMid meet`. Strokes используют
+`vector-effect: non-scaling-stroke`.
+
+На tablet/phone меняются viewBox, margins, portrait height and field layout. SVG имеет
+`width:100%`, фиксированную viewport-relative height и не заменяется bitmap. Custom SVG
+pan/pinch/zoom controller отсутствует; доступно только текущее browser/page zoom behavior.
+Следовательно mobile display/zoom имеет статус **PARTIAL** до проверки Android Chrome installed
+PWA, iOS Safari/Home Screen, portrait/landscape and pinch/page zoom.
+
+### Обязательные regression fixtures
+
+До любого drawing refactor или estimator migration нужно добавить:
+
+1. deterministic input fixture для каждого из 12 active variants;
+2. simple и detailed fixtures для straight, landing and winder matrices;
+3. asymmetric left/right dimensions, чтобы обнаруживать ошибочное mirror equivalence;
+4. separate-tread fixture с разными `b1/b2` и проверкой `M1=N1×b1`, `M2=N2×b2`;
+5. winder fixtures с 3 и нестандартным количеством `ZN`, polygon count and numbering;
+6. U-landing fixture с `ZL/ZW`;
+7. site-mark fixture: walls, window, ascent, balustrade, edge extension and obstacle;
+8. desktop/tablet/phone fixtures с exact viewBox, proportional bounds and non-clipped labels;
+9. field-change test: изменить каждую geometry dependency и доказать redraw/value update;
+10. online и TEMP save/reopen round-trip: project JSON, finish JSON and semantic SVG equivalence;
+11. main preview and production consumer tests preserving markers, labels, numeric values and
+    paint after post-processing;
+12. browser print/PDF screenshot fixtures for main and production output;
+13. Android/iOS visual acceptance for display, orientation and existing browser zoom.
+
+Tests не должны полагаться только на byte-for-byte SVG snapshot, потому что безопасная
+serialization может менять attribute order. Обязательны semantic assertions:
+
+- variant and viewBox;
+- rect/polygon/line counts and bounds;
+- left/right orientation;
+- dimension ids, label text, numeric value and units;
+- marker references;
+- route/ascent direction;
+- tread/winder counts;
+- no `NaN`, negative size, clipping or missing source fields;
+- save/reopen semantic equivalence.
+
+Любое intentional snapshot изменение требует визуального diff, объяснения formula impact,
+representative phone/print evidence и owner approval.
+
+### SVG migration gate
+
+Миграция в `tekstura-platform/apps/estimator-app` не может считаться READY, пока:
+
+- active legacy fixtures не запускаются против migration adapter/renderer;
+- все 12 variants сохраняют geometry and dimension semantics;
+- `drawing_project_json` schemaVersion 2 имеет versioned compatibility adapter;
+- saved legacy SVG остаётся viewable without regeneration;
+- regenerated SVG проходит semantic parity against the legacy fixture;
+- main, estimator and production consumers используют один approved SVG contract;
+- mobile and print visual gates пройдены;
+- owner отдельно одобрил любое изменение formulas или renderer.
+
+Итоговый audit status:
+
+```text
+SVG_DRAWINGS_STATUS: PARTIAL
+SVG_DRAWING_TYPES: empty_straight; empty_l_left; empty_l_right; ready_straight; ready_l_left_landing; ready_l_right_landing; ready_l_left_winder; ready_l_right_winder; ready_u_landing_left; ready_u_landing_right; ready_u_winder_left; ready_u_winder_right
+DIMENSION_LABELS_STATUS: PARTIAL
+SAVE_REOPEN_DRAWING_PRESERVED: YES
+MOBILE_SVG_STATUS: PARTIAL
+SVG_MIGRATION_RISK: HIGH
+SVG_RELEASE_BLOCKERS: no deterministic fixtures for all 12 variants; no field-change/redraw tests; no semantic save/reopen tests; no mobile orientation/zoom evidence; no print visual snapshots; no schemaVersion 2 migration adapter/parity suite
+```
 
 ### Сохранение, повторное открытие и редактирование
 
@@ -308,7 +522,8 @@ production/mobile acceptance test.
 | Client create/update | Partial | selection, deduplication, transactional/idempotent save |
 | New measurement | Partial | actual draft lifecycle and shared validation |
 | Measurement fields | Partial | typed DTO, migrations, required-field enforcement |
-| Drawings | Partial | fixtures, schema adapter, SVG trust policy |
+| SVG drawings | Partial; release blocker | 12-variant semantic fixtures, redraw/save/reopen/mobile/print parity and schema adapter |
+| Dimension lines/labels | Partial; release blocker | preserve markers, values, units, orientation and unclipped proportional layout |
 | Online save/edit | Partial | conflict handling, transaction/idempotency |
 | TEMP drafts | Partial | stale-state recovery, ordered durable autosave |
 | Offline app shell | Partial | automated cache/update tests and real mobile acceptance |
@@ -455,27 +670,31 @@ status/retry сообщения.
 
 Порядок обязателен:
 
-1. Добавить минимальный test harness без runtime refactor и characterization tests для:
+1. Зафиксировать SVG preservation rule: до появления fixture harness не изменять
+   `drawing-bridge.js`, formulas, renderer, SVG markup contract или active script selection.
+2. Добавить минимальный test harness без runtime refactor и characterization tests для:
    photo path ownership, offline status predicates и measurement payload.
-2. Исправить единый photo path contract в основном и production views; принять online,
+3. Исправить единый photo path contract в основном и production views; принять online,
    legacy и `measurements/<id>/...` paths, сохранив обязательную проверку `measurement_id`.
-3. Добавить regression test: TEMP → server measurement → photo sync → reload/reopen → main preview
+4. Добавить regression test: TEMP → server measurement → photo sync → reload/reopen → main preview
    и production view видят ту же row/path.
-4. Ввести recoverable sync state machine:
+5. Ввести recoverable sync state machine:
    `local_only → syncing → measurement_synced → photos_partial|synced|error`; при startup
    переводить stale `syncing` в recoverable state после reconciliation.
-5. Ввести durable `operation_id`/idempotency contract. Сначала утвердить schema/RPC migration;
+6. Ввести durable `operation_id`/idempotency contract. Сначала утвердить schema/RPC migration;
    затем одна server transaction создаёт/находит client+measurement по operation id.
-6. Добавить photo reconciliation для object-only, row-only и local-checkpoint-only состояний;
+7. Добавить photo reconciliation для object-only, row-only и local-checkpoint-only состояний;
    duplicate key/existing object не должен быть terminal error.
-7. Сериализовать IndexedDB writes per draft, flush на `visibilitychange/pagehide`, показать
+8. Сериализовать IndexedDB writes per draft, flush на `visibilitychange/pagehide`, показать
    сохранённую revision и quota/persistence warning.
-8. Исправить delete semantics: server-side authorized operation или compensating cleanup queue;
+9. Исправить delete semantics: server-side authorized operation или compensating cleanup queue;
    исключить публичный browser password и ограничить UI реальной permission.
-9. Определить один release version для HTML query strings, app diagnostics и service worker
+10. Определить один release version для HTML query strings, app diagnostics и service worker
    cache; добавить update test с предыдущей версией.
-10. Redact/gate diagnostics; удалить временный disabled script и после tests классифицировать
+11. Redact/gate diagnostics; удалить временный disabled script и после tests классифицировать
     альтернативные editors как delete/archive/reuse.
+12. Создать 12-variant SVG fixture corpus и semantic harness до любого следующего изменения
+    drawing code; добавить redraw, save/reopen, viewport, consumer and print assertions.
 
 Exit criteria:
 
@@ -483,6 +702,7 @@ Exit criteria:
 - crash на каждом sync checkpoint восстанавливается;
 - все synced photos видны после restart;
 - local data не удаляется до verified completion;
+- все 12 SVG variants проходят semantic parity, save/reopen, mobile viewport and print gates;
 - unit/integration tests зелёные.
 
 ### Phase B — завершить measurement workflow
@@ -539,13 +759,15 @@ Exit criteria:
    legacy measurement row ↔ canonical aggregate;
    drawing schema v2 ↔ stair-domain input;
    legacy/offline photo paths ↔ canonical attachment contract.
-5. Реализовать server API в platform; browser не должен напрямую выполнять privileged multi-table
+5. Сохранить legacy SVG contract: импортировать editable source JSON и exact saved SVG, запускать
+   все 12 legacy fixtures против adapter/renderer и блокировать migration при semantic/visual diff.
+6. Реализовать server API в platform; browser не должен напрямую выполнять privileged multi-table
    mutations.
-6. Переносить UI вертикальными slices в `apps/estimator-app`, начиная с read-only reopen, затем
+7. Переносить UI вертикальными slices в `apps/estimator-app`, начиная с read-only reopen, затем
    draft/save, drawing, photos, offline sync, finalization и admin/production.
-7. Запустить dual-read comparison, затем owner-approved migration rehearsal; dual-write только
+8. Запустить dual-read comparison, затем owner-approved migration rehearsal; dual-write только
    если отдельно спроектированы idempotency и rollback.
-8. Переключение выполнять после parity report, backup/restore test и mobile acceptance.
+9. Переключение выполнять после SVG parity report, backup/restore test и mobile acceptance.
 
 Текущий статус: **BLOCKED**, потому что operational schema/API отсутствуют, а estimator app пуст.
 
@@ -580,9 +802,12 @@ Exit criteria:
 6. не менять upload paths, Supabase, schema, Storage objects или production data;
 7. manual acceptance в isolated environment: синхронизировать одно TEMP photo, перезагрузить,
    открыть замер в main и production view, убедиться, что фото отображается.
+8. не менять `drawing-bridge.js`, drawing formulas, SVG markup, viewBox or drawing consumers;
+   review diff должен явно подтвердить отсутствие SVG runtime changes.
 
 После этого отдельным PR выполнить stale `syncing` recovery и idempotency design; не смешивать эти
-риски с первым path fix.
+риски с первым path fix. Первый будущий PR, который затрагивает SVG subsystem, разрешён только
+после добавления описанного 12-variant fixture harness и owner review baseline.
 
 ## Owner action
 
@@ -592,4 +817,6 @@ Exit criteria:
 2. что первый PR исправляет только photo reopen path и добавляет tests;
 3. что любая будущая cloud schema/RPC/RLS работа требует отдельного approval и isolated project;
 4. operational measurement schema остаётся отдельной Phase 8 частью `tekstura-platform`, а не
-   расширением public portfolio `projects`.
+   расширением public portfolio `projects`;
+5. SVG preservation является обязательным release/migration gate, а изменение renderer/formulas
+   требует regression evidence и отдельного owner approval.

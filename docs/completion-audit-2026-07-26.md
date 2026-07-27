@@ -384,6 +384,12 @@ SVG_MIGRATION_RISK: HIGH
 SVG_RELEASE_BLOCKERS: no deterministic fixtures for all 12 variants; no field-change/redraw tests; no semantic save/reopen tests; no mobile orientation/zoom evidence; no print visual snapshots; no schemaVersion 2 migration adapter/parity suite
 ```
 
+Update 2026-07-27: deterministic fixtures and semantic regression coverage now exist for all
+12 variants, including normalized geometry hashes, desktop/tablet/phone viewBoxes, redraw,
+save/reopen, and editor/production/print retention contracts. See
+`docs/svg-regression-suite.md`. Real-phone visual acceptance, browser print/PDF visual evidence,
+and the estimator-app schema-v2 adapter parity run remain migration/release gates.
+
 ### Сохранение, повторное открытие и редактирование
 
 Реализовано:

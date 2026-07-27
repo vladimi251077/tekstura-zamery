@@ -86,12 +86,12 @@ const SVG_VARIANT_FIXTURES = Object.freeze([
   fixture(
     "ready_l_left_winder",
     { site_situation: "Готовый металлокаркас", opening_type: "Г-образный левый", turn_type: "Забежные", stair_direction: "Старт слева" },
-    { title: "Г-образная левая", dimensions: ["B1", "B2", "ZN"], rects: 3, route: true, winderSteps: 3, orientation: "left", geometryHash: "aae364225b6a51f4" },
+    { title: "Г-образная левая", dimensions: ["B1", "B2", "ZN"], rects: 3, route: true, winderSteps: 3, orientation: "left", geometryHash: "c138ae5572e05cd1" },
   ),
   fixture(
     "ready_l_right_winder",
     { site_situation: "Готовый металлокаркас", opening_type: "Г-образный правый", turn_type: "Забежные", stair_direction: "Старт справа" },
-    { title: "Г-образная правая", dimensions: ["B1", "B2", "ZN"], rects: 3, route: true, winderSteps: 3, orientation: "right", geometryHash: "1325af7e5040e199" },
+    { title: "Г-образная правая", dimensions: ["B1", "B2", "ZN"], rects: 3, route: true, winderSteps: 3, orientation: "right", geometryHash: "a203ffb8b8b0d86b" },
   ),
   fixture(
     "ready_u_landing_left",
@@ -106,12 +106,12 @@ const SVG_VARIANT_FIXTURES = Object.freeze([
   fixture(
     "ready_u_winder_left",
     { site_situation: "Готовый металлокаркас", opening_type: "П-образный", turn_type: "Забежные", stair_direction: "Старт слева" },
-    { title: "П-образная лестница", dimensions: ["B1", "B2", "ZN"], rects: 3, route: true, winderSteps: 3, orientation: "left", geometryHash: "32a727d5789bf5c6" },
+    { title: "П-образная лестница", dimensions: ["B1", "B2", "ZN"], rects: 3, route: true, winderSteps: 3, orientation: "left", geometryHash: "04a0aeebf6054900" },
   ),
   fixture(
     "ready_u_winder_right",
     { site_situation: "Готовый металлокаркас", opening_type: "П-образный", turn_type: "Забежные", stair_direction: "Старт справа" },
-    { title: "П-образная лестница", dimensions: ["B1", "B2", "ZN"], rects: 3, route: true, winderSteps: 3, orientation: "right", geometryHash: "d2086721abde1920" },
+    { title: "П-образная лестница", dimensions: ["B1", "B2", "ZN"], rects: 3, route: true, winderSteps: 3, orientation: "right", geometryHash: "4a284b0c6c16cde4" },
   ),
 ]);
 

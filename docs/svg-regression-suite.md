@@ -26,12 +26,12 @@ All fixtures use the same deliberately asymmetric representative dimensions so t
 | `ready_straight` | Прямая лестница | B1, N1 | straight | `a0f945919ef91efe` |
 | `ready_l_left_landing` | Г-образная левая | B1, B2 | left | `aa465714be69f694` |
 | `ready_l_right_landing` | Г-образная правая | B1, B2 | right | `7e98a260ecd7de45` |
-| `ready_l_left_winder` | Г-образная левая | B1, B2, ZN | left | `aae364225b6a51f4` |
-| `ready_l_right_winder` | Г-образная правая | B1, B2, ZN | right | `1325af7e5040e199` |
+| `ready_l_left_winder` | Г-образная левая | B1, B2, ZN | left | `c138ae5572e05cd1` |
+| `ready_l_right_winder` | Г-образная правая | B1, B2, ZN | right | `a203ffb8b8b0d86b` |
 | `ready_u_landing_left` | П-образная лестница | B1, B2, ZL, ZW | left | `91feb6fafdf622c0` |
 | `ready_u_landing_right` | П-образная лестница | B1, B2, ZL, ZW | right | `91f1b17557369258` |
-| `ready_u_winder_left` | П-образная лестница | B1, B2, ZN | left | `32a727d5789bf5c6` |
-| `ready_u_winder_right` | П-образная лестница | B1, B2, ZN | right | `d2086721abde1920` |
+| `ready_u_winder_left` | П-образная лестница | B1, B2, ZN | left | `04a0aeebf6054900` |
+| `ready_u_winder_right` | П-образная лестница | B1, B2, ZN | right | `4a284b0c6c16cde4` |
 
 The empty L variants intentionally render label-only M/B dimension text. The tests preserve that exact production behavior instead of inventing numeric text that the current renderer does not show.
 
@@ -101,10 +101,13 @@ The protected generator chain is:
 The complete geometry/render helper inventory is:
 
 - primitive and geometry: `makeRect`, `buildGeometry`, `clamp`, `turningCenter`,
-  `rayRectIntersection`, `positiveAngle`, `angularProgress`, `buildWinderPolygons`;
+  `rayRectIntersection`, `positiveAngle`, `angularProgress`, `polygonSignedArea`,
+  `segmentCross`, `properSegmentIntersection`, `simplePolygon`, `lineIntersection`,
+  `convexIntersection`, `validateThreeWinderTopology`, `buildThreeWinderPolygons`,
+  `buildWinderPolygons`;
 - viewport and fitting: `drawingViewport`, `fitTransform`, `fitMargins`;
 - core SVG: `renderSvg`, `renderRect`, `renderStepLabels`, `renderLine`, `renderWinder`,
-  `renderRoute`, `renderDimension`;
+  `renderWinderTopLabels`, `renderRoute`, `renderDimension`;
 - sides and walls: `sideSegment`, `flightSideSegment`, `renderWalls`;
 - windows: `sideLengthForWindow`, `windowSegment`, `renderWindows`;
 - directional/site layers: `zoneRect`, `renderAscent`, `isOuterSideWalled`,
@@ -188,8 +191,11 @@ Most checks are semantic:
 - expected dimension IDs, labels, and fixture values;
 - dimension, extension, hit, route, tread, opening, and winder structures;
 - a common winder-ray origin equal to the center of the actual turn rectangle;
-- ZN 2/3/4 region counts, boundary hits, non-zero area, no self-intersection, full rectangular
+- ZN 2/3/4/5 region counts, boundary hits, non-zero area, no self-intersection, full rectangular
   coverage, contained number labels, and exact left/right mirroring;
+- dedicated ZN=3 ordered T-fan anchors, pairwise zero-overlap, 1–2/2–3 adjacency, no crossed
+  separators, centered labels, and a middle region containing the geometric transition area;
+- fixed accepted-geometry hashes for ZN=4 and ZN=5;
 - marker definitions and marker CSS contracts;
 - left/right flight placement;
 - unique critical marker IDs;

@@ -30,6 +30,12 @@ const EXPECTED_DIMENSION_VALUE = Object.freeze({
   ZW: "1040",
   ZN: "3 шт",
 });
+const ACCEPTED_WINDER_HASHES = Object.freeze({
+  ready_l_left_winder: Object.freeze({ 4: "44c032d4c8b201a2", 5: "5b39f8c3c52368ec" }),
+  ready_l_right_winder: Object.freeze({ 4: "91a051d094798d3f", 5: "50e342b0d8717da9" }),
+  ready_u_winder_left: Object.freeze({ 4: "1ad10e53b70702c6", 5: "797c1a249ffc491b" }),
+  ready_u_winder_right: Object.freeze({ 4: "e6408b83c0db09bb", 5: "2126b41c509939e1" }),
+});
 
 function inputRecord(name, value = "") {
   return {
@@ -415,6 +421,87 @@ function normalizedWinderSteps(geometry, mirror = false) {
   })));
 }
 
+function lineIntersection(a, b, c, d) {
+  const abX = b.x - a.x;
+  const abY = b.y - a.y;
+  const cdX = d.x - c.x;
+  const cdY = d.y - c.y;
+  const denominator = abX * cdY - abY * cdX;
+  if (Math.abs(denominator) < 0.001) return b;
+  const ratio = ((c.x - a.x) * cdY - (c.y - a.y) * cdX) / denominator;
+  return { x: a.x + ratio * abX, y: a.y + ratio * abY };
+}
+
+function signedPolygonArea(points) {
+  return points.reduce((sum, point, index) => {
+    const next = points[(index + 1) % points.length];
+    return sum + point.x * next.y - next.x * point.y;
+  }, 0) / 2;
+}
+
+function convexIntersection(subject, clip) {
+  const clipDirection = Math.sign(signedPolygonArea(clip)) || 1;
+  let output = subject.slice();
+  for (let i = 0; i < clip.length && output.length; i += 1) {
+    const edgeStart = clip[i];
+    const edgeEnd = clip[(i + 1) % clip.length];
+    const input = output;
+    output = [];
+    let previous = input[input.length - 1];
+    let previousInside = clipDirection * orientation(edgeStart, edgeEnd, previous) >= -0.001;
+    input.forEach((current) => {
+      const currentInside = clipDirection * orientation(edgeStart, edgeEnd, current) >= -0.001;
+      if (currentInside !== previousInside) output.push(lineIntersection(previous, current, edgeStart, edgeEnd));
+      if (currentInside) output.push(current);
+      previous = current;
+      previousInside = currentInside;
+    });
+  }
+  return output;
+}
+
+function polygonOverlapArea(a, b) {
+  const overlap = convexIntersection(a, b);
+  return overlap.length >= 3 ? Math.abs(signedPolygonArea(overlap)) : 0;
+}
+
+function polygonEdges(points) {
+  return points.map((start, index) => ({ start, end: points[(index + 1) % points.length] }));
+}
+
+function sharedEdge(a, b) {
+  return polygonEdges(a).some((edgeA) => polygonEdges(b).some((edgeB) => (
+    (pointsEqual(edgeA.start, edgeB.start) && pointsEqual(edgeA.end, edgeB.end))
+    || (pointsEqual(edgeA.start, edgeB.end) && pointsEqual(edgeA.end, edgeB.start))
+  )));
+}
+
+function rectAttachmentSegment(turn, flight) {
+  if (Math.abs(flight.y - (turn.y + turn.h)) <= 0.001) {
+    return { start: { x: flight.x, y: flight.y }, end: { x: flight.x + flight.w, y: flight.y } };
+  }
+  if (Math.abs(flight.x - (turn.x + turn.w)) <= 0.001) {
+    return { start: { x: flight.x, y: flight.y }, end: { x: flight.x, y: flight.y + flight.h } };
+  }
+  if (Math.abs(flight.x + flight.w - turn.x) <= 0.001) {
+    return { start: { x: turn.x, y: flight.y }, end: { x: turn.x, y: flight.y + flight.h } };
+  }
+  throw new Error("Flight does not attach to turn rectangle");
+}
+
+function boundaryOverlapLength(points, attachment) {
+  return polygonEdges(points).reduce((sum, edge) => {
+    if (Math.abs(orientation(attachment.start, attachment.end, edge.start)) > 0.001
+      || Math.abs(orientation(attachment.start, attachment.end, edge.end)) > 0.001) return sum;
+    const horizontal = Math.abs(attachment.start.y - attachment.end.y) <= 0.001;
+    const attachmentFrom = horizontal ? Math.min(attachment.start.x, attachment.end.x) : Math.min(attachment.start.y, attachment.end.y);
+    const attachmentTo = horizontal ? Math.max(attachment.start.x, attachment.end.x) : Math.max(attachment.start.y, attachment.end.y);
+    const edgeFrom = horizontal ? Math.min(edge.start.x, edge.end.x) : Math.min(edge.start.y, edge.end.y);
+    const edgeTo = horizontal ? Math.max(edge.start.x, edge.end.x) : Math.max(edge.start.y, edge.end.y);
+    return sum + Math.max(0, Math.min(attachmentTo, edgeTo) - Math.max(attachmentFrom, edgeFrom));
+  }, 0);
+}
+
 test("inventory and form-selection rules cover exactly the 12 protected variants", () => {
   const harness = createDrawingHarness();
   const drawingSource = fs.readFileSync(DRAWING_BRIDGE_PATH, "utf8");
@@ -490,11 +577,11 @@ for (const fixture of SVG_VARIANT_FIXTURES) {
   });
 }
 
-test("all protected winders use the rectangle center as one radial origin for ZN 2, 3, and 4", () => {
+test("all protected winders use the rectangle center as one radial origin for ZN 2, 3, 4, and 5", () => {
   const harness = createDrawingHarness();
   const fixtures = SVG_VARIANT_FIXTURES.filter((fixture) => fixture.type.includes("winder"));
   for (const fixture of fixtures) {
-    for (const count of [2, 3, 4]) {
+    for (const count of [2, 3, 4, 5]) {
       configureFixture(harness, fixture);
       harness.setField("winder_steps_count", count);
       const geometry = clone(harness.hook.buildGeometry());
@@ -515,7 +602,7 @@ test("left and right L/U winder tread regions are exact mirrors", () => {
   for (const [leftType, rightType] of pairs) {
     const left = SVG_VARIANT_FIXTURES.find((fixture) => fixture.type === leftType);
     const right = SVG_VARIANT_FIXTURES.find((fixture) => fixture.type === rightType);
-    for (const count of [2, 3, 4]) {
+    for (const count of [2, 3, 4, 5]) {
       configureFixture(harness, left);
       harness.setField("winder_steps_count", count);
       const leftGeometry = clone(harness.hook.buildGeometry());
@@ -523,6 +610,83 @@ test("left and right L/U winder tread regions are exact mirrors", () => {
       harness.setField("winder_steps_count", count);
       const rightGeometry = clone(harness.hook.buildGeometry());
       assert.deepEqual(normalizedWinderSteps(leftGeometry, true), normalizedWinderSteps(rightGeometry));
+    }
+  }
+});
+
+test("ZN=3 uses ordered T-fan regions with clean sequential topology", () => {
+  const harness = createDrawingHarness();
+  const fixtures = SVG_VARIANT_FIXTURES.filter((fixture) => fixture.type.includes("winder"));
+  for (const fixture of fixtures) {
+    const { geometry } = configureFixture(harness, fixture);
+    const turn = geometry.rects.find((rect) => rect.id === "turn");
+    const flight1 = geometry.rects.find((rect) => rect.id === "flight1");
+    const flight2 = geometry.rects.find((rect) => rect.id === "flight2");
+    const steps = geometry.winders.filter((item) => item.kind === "step");
+    const center = { x: turn.x + turn.w / 2, y: turn.y + turn.h / 2 };
+    const leftToRight = fixture.expected.orientation === "left";
+    const bottom = { x: center.x, y: turn.y + turn.h };
+    const left = { x: turn.x, y: center.y };
+    const right = { x: turn.x + turn.w, y: center.y };
+    const expectedAnchors = leftToRight
+      ? [[bottom, left], [left, right], [right, bottom]]
+      : [[bottom, right], [right, left], [left, bottom]];
+
+    assert.equal(steps.length, 3);
+    steps.forEach((step, index) => {
+      assert.ok(pointsEqual(step.points[0], center), `${fixture.type} step ${index + 1} center`);
+      assert.ok(pointsEqual(step.points[1], expectedAnchors[index][0]), `${fixture.type} step ${index + 1} ordered start anchor`);
+      assert.ok(pointsEqual(step.points.at(-1), expectedAnchors[index][1]), `${fixture.type} step ${index + 1} ordered end anchor`);
+      assertSimplePolygon(step.points, `${fixture.type} ZN3 step ${index + 1}`);
+      assert.ok(pointInPolygon(step.labelPoint, step.points), `${fixture.type} ZN3 label ${index + 1}`);
+    });
+
+    const areas = steps.map((step) => polygonArea(step.points));
+    assert.deepEqual(areas.map((area) => rounded(area / (turn.w * turn.h))), [0.25, 0.5, 0.25]);
+    assert.ok(pointsEqual(steps[1].labelPoint, { x: center.x, y: turn.y + turn.h / 4 }));
+    assert.ok(pointInPolygon({ x: center.x - turn.w / 10, y: center.y - turn.h / 10 }, steps[1].points));
+    assert.ok(pointInPolygon({ x: center.x + turn.w / 10, y: center.y - turn.h / 10 }, steps[1].points));
+
+    let overlapArea = 0;
+    for (let i = 0; i < steps.length; i += 1) {
+      for (let j = i + 1; j < steps.length; j += 1) overlapArea += polygonOverlapArea(steps[i].points, steps[j].points);
+    }
+    assert.ok(overlapArea <= 0.001, `${fixture.type} ZN3 polygons must not overlap`);
+    assert.equal(sharedEdge(steps[0].points, steps[1].points), true, `${fixture.type} steps 1-2 adjacency`);
+    assert.equal(sharedEdge(steps[1].points, steps[2].points), true, `${fixture.type} steps 2-3 adjacency`);
+    assert.ok(polygonOverlapArea(steps[0].points, steps[2].points) <= 0.001, `${fixture.type} steps 1 and 3 must not overlap`);
+    assert.ok(boundaryOverlapLength(steps[0].points, rectAttachmentSegment(turn, flight1)) > 0, `${fixture.type} step 1 connects to entering flight`);
+    assert.ok(boundaryOverlapLength(steps[2].points, rectAttachmentSegment(turn, flight2)) > 0, `${fixture.type} step 3 connects to exiting flight`);
+    let outerTreadCrossings = 0;
+    polygonEdges(steps[0].points).forEach((edge1) => polygonEdges(steps[2].points).forEach((edge3) => {
+      if (segmentsProperlyIntersect(edge1.start, edge1.end, edge3.start, edge3.end)) outerTreadCrossings += 1;
+    }));
+    assert.equal(outerTreadCrossings, 0, `${fixture.type} steps 1 and 3 must not improperly intersect`);
+
+    const uniqueAnchors = [bottom, left, right];
+    let separatorCrossings = 0;
+    for (let i = 0; i < uniqueAnchors.length; i += 1) {
+      for (let j = i + 1; j < uniqueAnchors.length; j += 1) {
+        if (segmentsProperlyIntersect(center, uniqueAnchors[i], center, uniqueAnchors[j])) separatorCrossings += 1;
+      }
+    }
+    assert.equal(separatorCrossings, 0, `${fixture.type} ZN3 separator crossings`);
+    assert.deepEqual(
+      uniqueAnchors.map((point) => [rounded((point.x - turn.x) / turn.w), rounded((point.y - turn.y) / turn.h)]).sort(),
+      [[0, 0.5], [0.5, 1], [1, 0.5]],
+      `${fixture.type} ZN3 uses T anchors rather than X topology`,
+    );
+  }
+});
+
+test("accepted ZN=4 and ZN=5 normalized geometry hashes remain unchanged", () => {
+  const harness = createDrawingHarness();
+  for (const fixture of SVG_VARIANT_FIXTURES.filter((item) => item.type.includes("winder"))) {
+    for (const count of [4, 5]) {
+      configureFixture(harness, fixture);
+      harness.setField("winder_steps_count", count);
+      const geometry = clone(harness.hook.buildGeometry());
+      assert.equal(geometryHash(geometry), ACCEPTED_WINDER_HASHES[fixture.type][count], `${fixture.type} ZN=${count}`);
     }
   }
 });

@@ -1384,6 +1384,125 @@
     return positiveAngle((angle - startAngle) * direction);
   }
 
+  function polygonSignedArea(points) {
+    return points.reduce((sum, point, index) => {
+      const next = points[(index + 1) % points.length];
+      return sum + point.x * next.y - next.x * point.y;
+    }, 0) / 2;
+  }
+
+  function segmentCross(a, b, c) {
+    return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+  }
+
+  function properSegmentIntersection(a, b, c, d) {
+    const epsilon = 0.0001;
+    const abC = segmentCross(a, b, c);
+    const abD = segmentCross(a, b, d);
+    const cdA = segmentCross(c, d, a);
+    const cdB = segmentCross(c, d, b);
+    return ((abC > epsilon && abD < -epsilon) || (abC < -epsilon && abD > epsilon))
+      && ((cdA > epsilon && cdB < -epsilon) || (cdA < -epsilon && cdB > epsilon));
+  }
+
+  function simplePolygon(points) {
+    for (let i = 0; i < points.length; i += 1) {
+      const a = points[i];
+      const b = points[(i + 1) % points.length];
+      for (let j = i + 1; j < points.length; j += 1) {
+        if (j === i || j === (i + 1) % points.length || (j + 1) % points.length === i) continue;
+        if (properSegmentIntersection(a, b, points[j], points[(j + 1) % points.length])) return false;
+      }
+    }
+    return true;
+  }
+
+  function lineIntersection(a, b, c, d) {
+    const abX = b.x - a.x;
+    const abY = b.y - a.y;
+    const cdX = d.x - c.x;
+    const cdY = d.y - c.y;
+    const denominator = abX * cdY - abY * cdX;
+    if (Math.abs(denominator) < 0.0001) return b;
+    const ratio = ((c.x - a.x) * cdY - (c.y - a.y) * cdX) / denominator;
+    return { x: a.x + ratio * abX, y: a.y + ratio * abY };
+  }
+
+  function convexIntersection(subject, clip) {
+    const clipDirection = Math.sign(polygonSignedArea(clip)) || 1;
+    let output = subject.slice();
+    for (let i = 0; i < clip.length && output.length; i += 1) {
+      const edgeStart = clip[i];
+      const edgeEnd = clip[(i + 1) % clip.length];
+      const input = output;
+      output = [];
+      let previous = input[input.length - 1];
+      let previousInside = clipDirection * segmentCross(edgeStart, edgeEnd, previous) >= -0.0001;
+      input.forEach((current) => {
+        const currentInside = clipDirection * segmentCross(edgeStart, edgeEnd, current) >= -0.0001;
+        if (currentInside !== previousInside) output.push(lineIntersection(previous, current, edgeStart, edgeEnd));
+        if (currentInside) output.push(current);
+        previous = current;
+        previousInside = currentInside;
+      });
+    }
+    return output;
+  }
+
+  function validateThreeWinderTopology(rect, regions, center, anchors) {
+    const areas = regions.map((region) => Math.abs(polygonSignedArea(region.points)));
+    const winding = regions.map((region) => Math.sign(polygonSignedArea(region.points)));
+    const expectedArea = rect.w * rect.h;
+    const overlapArea = regions.reduce((sum, region, index) => (
+      sum + regions.slice(index + 1).reduce((pairSum, other) => {
+        const overlap = convexIntersection(region.points, other.points);
+        return pairSum + (overlap.length >= 3 ? Math.abs(polygonSignedArea(overlap)) : 0);
+      }, 0)
+    ), 0);
+    const separators = anchors.map((end) => ({ start: center, end }));
+    const crossed = separators.some((separator, index) => separators.slice(index + 1)
+      .some((other) => properSegmentIntersection(separator.start, separator.end, other.start, other.end)));
+    const invalid = regions.length !== 3
+      || areas.some((area) => area <= 0.0001)
+      || winding.some((value) => value !== winding[0])
+      || regions.some((region) => !simplePolygon(region.points))
+      || overlapArea > 0.0001
+      || Math.abs(areas.reduce((sum, area) => sum + area, 0) - expectedArea) > 0.0001
+      || crossed;
+    if (invalid) throw new Error("Invalid ZN=3 winder topology");
+  }
+
+  function buildThreeWinderPolygons(rect, center, direction, idPrefix) {
+    const bottom = { x: center.x, y: rect.y + rect.h };
+    const left = { x: rect.x, y: center.y };
+    const right = { x: rect.x + rect.w, y: center.y };
+    const topLeft = { x: rect.x, y: rect.y };
+    const topRight = { x: rect.x + rect.w, y: rect.y };
+    const bottomLeft = { x: rect.x, y: rect.y + rect.h };
+    const bottomRight = { x: rect.x + rect.w, y: rect.y + rect.h };
+    const leftToRight = direction >= 0;
+    const regions = leftToRight
+      ? [
+        { points: [center, bottom, bottomLeft, left], labelPoint: { x: rect.x + rect.w / 4, y: rect.y + rect.h * 3 / 4 } },
+        { points: [center, left, topLeft, topRight, right], labelPoint: { x: center.x, y: rect.y + rect.h / 4 } },
+        { points: [center, right, bottomRight, bottom], labelPoint: { x: rect.x + rect.w * 3 / 4, y: rect.y + rect.h * 3 / 4 } },
+      ]
+      : [
+        { points: [center, bottom, bottomRight, right], labelPoint: { x: rect.x + rect.w * 3 / 4, y: rect.y + rect.h * 3 / 4 } },
+        { points: [center, right, topRight, topLeft, left], labelPoint: { x: center.x, y: rect.y + rect.h / 4 } },
+        { points: [center, left, bottomLeft, bottom], labelPoint: { x: rect.x + rect.w / 4, y: rect.y + rect.h * 3 / 4 } },
+      ];
+    const numbered = regions.map((region, index) => ({
+      id: `${idPrefix}-${index + 1}`,
+      kind: "step",
+      number: index + 1,
+      center,
+      ...region,
+    }));
+    validateThreeWinderTopology(rect, numbered, center, [bottom, left, right]);
+    return numbered;
+  }
+
   function buildWinderPolygons(rect, center, startAngle, direction, count, idPrefix) {
     const steps = Math.max(1, Math.round(count));
     const sweepDirection = direction < 0 ? -1 : 1;
@@ -1399,15 +1518,17 @@
       result.push({ id: `${idPrefix}-1`, kind: "step", number: 1, center, points: corners });
       return result;
     }
-    const hits = Array.from({ length: steps + 1 }, (_, index) => (
-      rayRectIntersection(center, startAngle + sweepDirection * fullTurn * index / steps, rect)
+    if (steps === 3) return [...result, ...buildThreeWinderPolygons(rect, center, sweepDirection, idPrefix)];
+    const progressStops = Array.from({ length: steps + 1 }, (_, index) => fullTurn * index / steps);
+    const hits = progressStops.map((progress) => (
+      rayRectIntersection(center, startAngle + sweepDirection * progress, rect)
     ));
     const orderedCorners = corners
       .map((point) => ({ point, progress: angularProgress(point, center, startAngle, sweepDirection) }))
       .sort((a, b) => a.progress - b.progress);
     for (let i = 0; i < steps; i += 1) {
-      const from = fullTurn * i / steps;
-      const to = fullTurn * (i + 1) / steps;
+      const from = progressStops[i];
+      const to = progressStops[i + 1];
       const boundaryCorners = orderedCorners
         .filter((item) => item.progress > from + 0.0001 && item.progress < to - 0.0001)
         .map((item) => item.point);
@@ -1510,6 +1631,7 @@
     const lines = geometry.lines.map((line) => renderLine(line, tr)).join("");
     const dimensions = geometry.dimensions.map((dim) => renderDimension(dim, tr)).join("");
     const stepLabels = renderStepLabels(geometry, tr);
+    const winderTopLabels = renderWinderTopLabels(geometry, tr);
     const route = renderRoute(geometry.route, tr);
     const showSiteMarks = shouldRenderSiteMarks();
     const walls = showSiteMarks ? renderWalls(geometry, tr) : "";
@@ -1519,7 +1641,7 @@
     const edges = showSiteMarks && !geometry.suppressEdgeExtensions ? renderEdgeExtensions(geometry, tr) : "";
     const obstacles = showSiteMarks ? renderObstacles(geometry, tr) : "";
     const title = `<text class="caption" x="28" y="38">${escapeHtml(geometry.title)}</text>`;
-    return `<svg class="db-svg" viewBox="0 0 ${viewport.w} ${viewport.h}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Замерная схема лестницы">${defs}<rect width="${viewport.w}" height="${viewport.h}" fill="#fff"/>${grid}${title}<g>${rects}${winders}${lines}${route}${walls}${windows}${ascent}${balustrade}${edges}${obstacles}${dimensions}${stepLabels}</g></svg>`;
+    return `<svg class="db-svg" viewBox="0 0 ${viewport.w} ${viewport.h}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Замерная схема лестницы">${defs}<rect width="${viewport.w}" height="${viewport.h}" fill="#fff"/>${grid}${title}<g>${rects}${winders}${lines}${route}${walls}${windows}${ascent}${balustrade}${edges}${obstacles}${dimensions}${stepLabels}${winderTopLabels}</g></svg>`;
   }
 
   function renderRect(r, tr) {
@@ -1561,9 +1683,17 @@
     const points = poly.points.map((point) => tr.map(point));
     const d = points.map((point) => `${point.x},${point.y}`).join(" ");
     if (poly.kind === "envelope") return `<polygon class="winder-envelope" data-zone="turn" points="${d}"/>`;
+    if (poly.labelPoint) return `<polygon class="winder-step" data-zone="turn" points="${d}"/>`;
     const cx = points.reduce((sum, p) => sum + p.x, 0) / points.length;
     const cy = points.reduce((sum, p) => sum + p.y, 0) / points.length;
     return `<g><polygon class="winder-step" data-zone="turn" points="${d}"/><text class="step-no" x="${cx}" y="${cy + 4}">${poly.number}</text></g>`;
+  }
+
+  function renderWinderTopLabels(geometry, tr) {
+    return geometry.winders.filter((poly) => poly.kind === "step" && poly.labelPoint).map((poly) => {
+      const point = tr.map(poly.labelPoint);
+      return `<g><circle cx="${point.x}" cy="${point.y}" r="11" fill="#fff" stroke="#cbd5e1" stroke-width="1"/><text class="step-no" data-winder-step="${poly.number}" x="${point.x}" y="${point.y + 4}">${poly.number}</text></g>`;
+    }).join("");
   }
 
   function renderRoute(route, tr) {

@@ -1,6 +1,7 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const { execFileSync } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
 const { chromium } = require("playwright");
@@ -14,10 +15,14 @@ const VIEWPORTS = [
   { width: 768, height: 1024 },
   { width: 1440, height: 1000 },
 ];
+const PHONE_VIEWPORTS = VIEWPORTS.slice(0, 2);
+const COUNTS = [3, 4, 5];
 const WINDERS = SVG_VARIANT_FIXTURES.filter((fixture) => fixture.type.includes("winder"));
 
 function instrumentDrawingBridge() {
-  const source = fs.readFileSync(path.join(ROOT, "drawing-bridge.js"), "utf8");
+  const source = process.env.WINDER_DRAWING_REF
+    ? execFileSync("git", ["show", `${process.env.WINDER_DRAWING_REF}:drawing-bridge.js`], { cwd: ROOT, encoding: "utf8" })
+    : fs.readFileSync(path.join(ROOT, "drawing-bridge.js"), "utf8");
   const closeIndex = source.lastIndexOf("\n})();");
   assert.notEqual(closeIndex, -1, "drawing-bridge.js IIFE terminator changed");
   const hook = `
@@ -71,12 +76,13 @@ function pageMarkup() {
 </html>`;
 }
 
-async function configurePage(page, fixture) {
-  await page.evaluate(({ fields, project, type }) => {
+async function configurePage(page, fixture, count) {
+  await page.evaluate(({ fields, project, type, count }) => {
     const form = document.querySelector("#measurement-form");
     form.replaceChildren();
     const values = {
       ...fields,
+      winder_steps_count: String(count),
       drawing_project_json: JSON.stringify(project),
       drawing_svg: "",
       finish_dimensions_json: "{}",
@@ -91,25 +97,25 @@ async function configurePage(page, fixture) {
     window.__WinderAcceptance.setState(project);
     const geometry = window.__WinderAcceptance.buildGeometry();
     const svg = window.__WinderAcceptance.renderSvg(geometry);
-    document.querySelector(".evidence h1").textContent = `${type} · ZN=3`;
+    document.querySelector(".evidence h1").textContent = `${type} · ZN=${count}`;
     document.querySelector(".editor-svg").innerHTML = svg;
     document.querySelector(".production-svg").innerHTML = svg;
     window.__CURRENT_WINDER_GEOMETRY = geometry;
-  }, { fields: fixture.fields, project: fixture.project, type: fixture.type });
+  }, { fields: fixture.fields, project: fixture.project, type: fixture.type, count });
 }
 
-async function assertBrowserGeometry(page, fixture, viewport) {
+async function assertBrowserGeometry(page, fixture, viewport, count) {
   const result = await page.evaluate(() => {
     const geometry = window.__CURRENT_WINDER_GEOMETRY;
     const turn = geometry.rects.find((rect) => rect.id === "turn");
     const steps = geometry.winders.filter((item) => item.kind === "step");
     const center = { x: turn.x + turn.w / 2, y: turn.y + turn.h / 2 };
     const origins = steps.map((step) => step.points[0]);
-    const labelsInside = [...document.querySelectorAll(".editor-svg .winder-step")].every((polygon) => {
-      const label = polygon.parentElement.querySelector(".step-no");
+    const editor = document.querySelector(".editor-svg svg");
+    const labelsInside = [...document.querySelectorAll(".editor-svg .winder-step")].every((polygon, index) => {
+      const label = editor.querySelector(`[data-winder-step="${index + 1}"]`) || polygon.parentElement.querySelector(".step-no");
       return polygon.isPointInFill(new DOMPoint(Number(label.getAttribute("x")), Number(label.getAttribute("y")) - 4));
     });
-    const editor = document.querySelector(".editor-svg svg");
     const production = document.querySelector(".production-svg svg");
     const editorPolygons = [...editor.querySelectorAll(".winder-step")].map((node) => node.getAttribute("points"));
     const productionPolygons = [...production.querySelectorAll(".winder-step")].map((node) => node.getAttribute("points"));
@@ -125,7 +131,7 @@ async function assertBrowserGeometry(page, fixture, viewport) {
     };
   });
   const expectedViewBox = viewport.width <= 430 ? "0 0 820 1100" : viewport.width <= 1000 ? "0 0 960 780" : "0 0 1100 760";
-  assert.equal(result.count, 3, `${fixture.type} ${viewport.width}x${viewport.height} tread count`);
+  assert.equal(result.count, count, `${fixture.type} ZN=${count} ${viewport.width}x${viewport.height} tread count`);
   assert.equal(result.centerMatches, true, `${fixture.type} ${viewport.width}x${viewport.height} center`);
   assert.equal(result.oneOrigin, true, `${fixture.type} ${viewport.width}x${viewport.height} common origin`);
   assert.equal(result.labelsInside, true, `${fixture.type} ${viewport.width}x${viewport.height} labels`);
@@ -141,27 +147,37 @@ async function main() {
     executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined,
   });
   const page = await browser.newPage();
+  const browserErrors = [];
+  page.on("pageerror", (error) => browserErrors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() === "error") browserErrors.push(message.text());
+  });
   await page.setContent(pageMarkup(), { waitUntil: "load" });
   await page.addScriptTag({ content: instrumentDrawingBridge() });
   await page.evaluate(() => window.__WinderAcceptance.injectStyle());
+  assert.equal(await page.locator("body").innerText().then((text) => text.trim().length > 0), true, "acceptance page must not be blank");
+  assert.equal(await page.locator("[data-nextjs-dialog], .vite-error-overlay, #webpack-dev-server-client-overlay").count(), 0, "no browser error overlay");
 
   const report = [];
   for (const fixture of WINDERS) {
-    for (const viewport of VIEWPORTS) {
-      await page.setViewportSize(viewport);
-      await configurePage(page, fixture);
-      await assertBrowserGeometry(page, fixture, viewport);
-      const filename = `${fixture.type}-${viewport.width}x${viewport.height}.png`;
-      await page.screenshot({ path: path.join(OUTPUT_DIR, filename), fullPage: false });
-      report.push({ fixture: fixture.type, viewport: `${viewport.width}x${viewport.height}`, screenshot: filename, status: "PASS" });
+    for (const count of COUNTS) {
+      const viewports = count === 3 ? VIEWPORTS : PHONE_VIEWPORTS;
+      for (const viewport of viewports) {
+        await page.setViewportSize(viewport);
+        await configurePage(page, fixture, count);
+        await assertBrowserGeometry(page, fixture, viewport, count);
+        const filename = `${fixture.type}-zn${count}-${viewport.width}x${viewport.height}.png`;
+        await page.screenshot({ path: path.join(OUTPUT_DIR, filename), fullPage: false });
+        report.push({ fixture: fixture.type, count, viewport: `${viewport.width}x${viewport.height}`, screenshot: filename, status: "PASS" });
+      }
     }
   }
 
   await page.setViewportSize({ width: 1440, height: 1000 });
   for (const fixture of WINDERS) {
-    await configurePage(page, fixture);
+    await configurePage(page, fixture, 3);
     await page.pdf({
-      path: path.join(OUTPUT_DIR, `${fixture.type}-print.pdf`),
+      path: path.join(OUTPUT_DIR, `${fixture.type}-zn3-print.pdf`),
       format: "A4",
       landscape: true,
       printBackground: true,
@@ -169,8 +185,9 @@ async function main() {
     });
   }
   fs.writeFileSync(path.join(OUTPUT_DIR, "browser-report.json"), `${JSON.stringify(report, null, 2)}\n`);
+  assert.deepEqual(browserErrors, [], "Chromium console and page errors");
   await browser.close();
-  process.stdout.write(`Chromium winder acceptance PASS: ${report.length} viewport checks; ${WINDERS.length} print PDFs\n`);
+  process.stdout.write(`Chromium winder acceptance PASS: ${report.length} viewport/count checks; ${WINDERS.length} ZN=3 print PDFs\n`);
 }
 
 main().catch((error) => {

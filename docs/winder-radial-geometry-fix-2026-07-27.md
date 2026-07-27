@@ -28,7 +28,8 @@ This edge-origin triangle sequence is the incorrect construction the owner obser
 `{ x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 }`.
 
 `buildGeometry()` computes that point once for the active rectangular turn and passes the same
-object to every region created for that zone. `buildWinderPolygons()`:
+object to every region created for that zone. For counts other than three,
+`buildWinderPolygons()`:
 
 1. starts the fan at the lower-center ray;
 2. sweeps one full turn in equal angular divisions controlled by `ZN`;
@@ -42,9 +43,41 @@ The L-left/L-right and U-left/U-right pairs are exact normalized mirrors. The fl
 outer stair bounds, dimensions, routes, viewBoxes, measurement calculations, editor persistence,
 and production consumers were not changed.
 
+## Owner phone follow-up: dedicated ZN=3 topology
+
+The first common-center implementation divided a full turn into equal angles. At `ZN=3`, its
+120-degree stops hit bottom-center and the two upper boundary areas. This made the middle region
+an oversized triangle across the upper turn and left two diagonal separator arms, which read as
+an irregular V/X construction on a phone. The same generic construction remains accepted at
+`ZN=4` and `ZN=5`.
+
+`buildThreeWinderPolygons()` now handles only `ZN=3`. It uses the actual rectangle center and
+three ordered boundary anchors:
+
+- bottom-center;
+- left-edge midpoint;
+- right-edge midpoint.
+
+For a left-oriented stair, the walking sequence is the lower-left entry region, the upper
+central transition region, and the lower-right exit region. Right orientation is its exact
+mirror. The areas are deterministically 25%, 50%, and 25% of the turn rectangle. The separators
+form a T rather than an X, all three regions are continuous and simple, and labels use the
+geometric center of each region. ZN=3 labels are rendered above route and tread lines with a
+small white backing so their centered positions remain legible.
+
+Before returning the ZN=3 geometry, `validateThreeWinderTopology()` verifies:
+
+- exactly three positive-area, consistently wound simple polygons;
+- zero pairwise overlap;
+- summed area equals the complete turn rectangle;
+- no proper separator crossing.
+
+The accepted normalized geometry hashes for `ZN=4` and `ZN=5` are fixed in the regression suite
+and remain unchanged.
+
 ## Regression and browser acceptance
 
-The Node regression suite now asserts for all four protected winder variants and `ZN = 2, 3, 4`:
+The Node regression suite now asserts for all four protected winder variants and `ZN = 2, 3, 4, 5`:
 
 - requested tread-region count;
 - one common origin;
@@ -55,6 +88,11 @@ The Node regression suite now asserts for all four protected winder variants and
 - number-label points remain inside their region;
 - exact left/right mirroring;
 - finite SVG output.
+
+For `ZN=3`, it additionally asserts ordered bottom and side anchors, T rather than X topology,
+zero pairwise overlap, sequential 1–2 and 2–3 shared boundaries, no improper 1–3 intersection,
+25%/50%/25% area allocation, centered labels, and inclusion of the central transition area in
+tread 2.
 
 The four winder hashes were intentionally updated. All eight non-winder hashes remain unchanged.
 
@@ -68,10 +106,15 @@ The four winder hashes were intentionally updated. All eight non-winder hashes r
 It checks the rendered SVG common origin, calculated center, tread count, label containment,
 responsive viewBox, finite output, and editor/production polygon parity. It also writes one
 print PDF per variant. Poppler inspection reports no raster images in those PDFs, and rendered
-PDF pages retain the corrected vector geometry.
+PDF pages retain the corrected vector geometry. ZN=4 and ZN=5 additionally run at the two
+phone-acceptance sizes, 390×844 and 844×390.
 
-Local evidence is generated under `artifacts/winder-radial-geometry/`. The evidence directory is
-not part of the focused runtime commit.
+Local first-pass evidence is under `artifacts/winder-radial-geometry/`. Owner-follow-up comparison
+evidence is under `artifacts/zn3-correction/`: `before/` contains the failed equal-angle ZN=3
+phone output, while `after/` contains corrected ZN=3 plus unchanged ZN=4 and ZN=5 output at
+390×844 and 844×390. All eight ZN=4 phone screenshots and all eight ZN=5 phone screenshots are
+byte-for-byte equal between the baseline and corrected runs; all eight ZN=3 phone screenshots
+change as intended. Evidence directories are not part of the focused runtime commit.
 
 ## Acceptance state
 

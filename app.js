@@ -11,13 +11,14 @@ const PHOTO_DRAFT_SAVE_REQUIRED_MESSAGE = "Фото не загружено: с�
 const PHOTO_UPLOAD_OFFLINE_MESSAGE = "Фото нельзя загрузить без интернета. В TEMP-черновике фото сохраняются в телефоне и отправятся при синхронизации.";
 const OFFLINE_SYNC_UNAVAILABLE_MESSAGE = "Появится интернет — можно будет синхронизировать.";
 const OFFLINE_SYNC_ERROR_MESSAGE = "Не удалось синхронизировать. Черновик сохранён в телефоне, попробуйте ещё раз.";
-const TEKSTURA_APP_JS_VERSION = "20260726-stale-sync-v1";
-const OFFLINE_SHELL_CACHE_NAME = "tekstura-offline-shell-v36-app-shell";
+const TEKSTURA_APP_JS_VERSION = "20260727-safe-delete-v1";
+const OFFLINE_SHELL_CACHE_NAME = "tekstura-offline-shell-v37-app-shell";
 const SUPABASE_CONNECTING_MESSAGE = "Подключаюсь к Supabase...";
 const SUPABASE_REFRESHING_MESSAGE = "Обновляю данные...";
 const PERMANENT_DELETE_PASSWORD = "del2525";
 const supabaseClient = window.supabase?.createClient ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const syncState = window.TeksturaSyncState;
+const deletionSafety = window.TeksturaDeletionSafety;
 const offlineSyncCoordinator = syncState?.createMeasurementCoordinator();
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
@@ -98,6 +99,8 @@ const state = {
   offlineSyncInFlight: new Set(),
   offlineSyncCoordinator,
   selectedTrashIds: new Set(),
+  formDirty: false,
+  formBaseline: "",
   lastSupabaseError: null,
   profileSource: "",
 };
@@ -239,7 +242,7 @@ function renderStartupError(error) {
   const bootMessage = document.getElementById("boot-fallback-message");
   if (bootFallback) bootFallback.style.display = "block";
   if (bootMessage) {
-    bootMessage.textContent = "Ошибка запуска приложения: " + details + ". Включите интернет, нажмите Обновить или очистите данные сайта.";
+    bootMessage.textContent = "Ошибка запуска приложения. Включите интернет и нажмите Обновить. Не очищайте данные сайта: там могут храниться локальные замеры и фото.";
   }
 }
 
@@ -443,10 +446,10 @@ function formatOfflineDraftDate(value) {
 function offlineDraftStatusLines(draft = {}) {
   const status = draft.server_id ? "synced" : (draft.sync_status || "local_only");
   if (status === "syncing") return ["Синхронизация..."];
-  if (status === "sync_error") return [`Ошибка синхронизации${draft.last_sync_error || draft.sync_error ? `: ${draft.last_sync_error || draft.sync_error}` : ""}`];
+  if (status === "sync_error") return ["Ошибка синхронизации. Данные сохранены на устройстве, можно повторить."];
   if (status === "synced") return [
     "Уже отправлен в Supabase",
-    `Номер: ${draft.server_number || draft.server_id || "без номера"}`,
+    `Номер: ${draft.server_number || "подтверждён сервером"}`,
   ];
   return ["Не отправлен"];
 }
@@ -725,6 +728,7 @@ function makeLocalPhotoId() {
 
 async function createLocalOfflineDraft() {
   if (!window.TeksturaOfflineDB?.createOfflineDraft) return setMessage($("#form-message"), "IndexedDB недоступен: локальный черновик нельзя создать.", "error");
+  if (!confirmLeaveProtectedData("создать новый локальный черновик")) return;
   await loadOfflineDrafts();
   const identity = currentUserIdentity();
   const now = new Date().toISOString();
@@ -760,16 +764,17 @@ async function createLocalOfflineDraft() {
   };
   await window.TeksturaOfflineDB.createOfflineDraft(draft);
   await loadOfflineDrafts();
-  await openOfflineDraft(draft.local_id);
+  await openOfflineDraft(draft.local_id, { skipProtection: true });
 }
 
-async function openOfflineDraft(localId) {
+async function openOfflineDraft(localId, options = {}) {
   const draft = await window.TeksturaOfflineDB?.getOfflineDraft?.(localId);
   if (!draft) return setMessage($("#form-message"), "Локальный черновик не найден в этом телефоне.", "error");
+  if (!options.skipProtection && state.selected?.local_id !== localId && !confirmLeaveProtectedData("открыть другой замер")) return;
   if (draft.server_id && navigator.onLine && supabaseClient) {
     if (!state.measurements.some((measurement) => measurement.id === draft.server_id)) await loadMeasurements();
     if (state.measurements.some((measurement) => measurement.id === draft.server_id)) {
-      await selectMeasurement(draft.server_id, { mode: "edit" });
+      await selectMeasurement(draft.server_id, { mode: "edit", skipProtection: true });
       return setMessage($("#form-message"), `Этот черновик уже синхронизирован: ${draft.server_number || "серверный замер"}`, "ok");
     }
   }
@@ -795,10 +800,14 @@ async function openOfflineDraft(localId) {
 async function deleteLocalOfflineDraft(localId) {
   const draft = state.offlineDrafts.find((item) => item.local_id === localId);
   if (!draft) return;
-  if (!confirm(`Удалить локальный черновик и все его фото только с этого телефона?`)) return;
-  await window.TeksturaOfflineDB?.deleteOfflineDraft?.(localId);
+  const photos = await listLocalOfflinePhotos(localId);
+  if (!authorizeMeasurementDeletion(draft, photos, { itemLabel: "локальный черновик" })) return;
+  const deleteDraft = window.TeksturaOfflineDB?.deleteOfflineDraft;
+  if (typeof deleteDraft !== "function") throw new Error("Безопасное локальное удаление недоступно. Черновик сохранён.");
+  await deleteDraft(localId, { safetyAuthorized: true });
   if (state.selected?.local_id === localId) {
     state.selected = null;
+    state.formDirty = false;
     showWorkspacePanel("empty");
   }
   await loadOfflineDrafts();
@@ -828,6 +837,8 @@ async function saveLocalOfflineDraftNow(options = {}) {
   };
   await window.TeksturaOfflineDB?.putOfflineDraft?.(draft);
   state.selected = offlineDraftToMeasurement(draft);
+  state.formDirty = false;
+  state.formBaseline = measurementFormSafetyFingerprint();
   await loadOfflineDrafts();
   if (!options.silent) setMessage($("#form-message"), "Офлайн-черновик сохранён в телефоне", "ok");
   return state.selected;
@@ -899,10 +910,10 @@ async function openSyncedOfflineDraft(draft) {
   if (!draft?.server_id) return null;
   if (navigator.onLine && supabaseClient && !state.measurements.some((measurement) => measurement.id === draft.server_id)) await loadMeasurements();
   if (state.measurements.some((measurement) => measurement.id === draft.server_id)) {
-    await selectMeasurement(draft.server_id, { mode: "edit" });
+    await selectMeasurement(draft.server_id, { mode: "edit", skipProtection: true });
     return state.selected;
   }
-  setMessage($("#form-message"), `Этот черновик уже синхронизирован: ${draft.server_number || draft.server_id}`, "ok");
+  setMessage($("#form-message"), `Этот черновик уже синхронизирован: ${draft.server_number || "номер подтверждён сервером"}`, "ok");
   return null;
 }
 
@@ -1336,7 +1347,7 @@ async function syncOfflineDraftLocked(localId) {
       await markOfflineDraftSynced(localId, remotelyCompletedMeasurement);
       const reconciledPhotoResult = await syncOfflineDraftPhotosLocked(localId, { serverMeasurementId: remotelyCompletedMeasurement.id });
       await loadMeasurements();
-      await selectMeasurement(remotelyCompletedMeasurement.id, { mode: "edit" });
+      await selectMeasurement(remotelyCompletedMeasurement.id, { mode: "edit", skipProtection: true });
       if (reconciledPhotoResult?.failed) {
         setMessage($("#form-message"), "Замер уже был создан в Supabase. Не все фото отправлены; повторите синхронизацию фото.", "error");
       } else {
@@ -1397,7 +1408,7 @@ async function syncOfflineDraftLocked(localId) {
     await markOfflineDraftSynced(localId, measurement);
     const photoResult = await syncOfflineDraftPhotosLocked(localId, { serverMeasurementId: measurement.id });
     await loadMeasurements();
-    await selectMeasurement(measurement.id, { mode: "edit" });
+    await selectMeasurement(measurement.id, { mode: "edit", skipProtection: true });
     if (photoResult?.failed) {
       setMessage($("#form-message"), "Не все фото отправлены. Локальные фото сохранены в телефоне, попробуйте ещё раз.", "error");
     } else if (measurement.number) {
@@ -1741,7 +1752,6 @@ async function signedPhotoUrl(path) {
 function renderPhotoFallback(message, filePath, hidden = false) {
   return `<div class="photo-fallback ${hidden ? "hidden" : ""}">
     <strong>${escapeHtml(message)}</strong>
-    ${filePath ? `<small>${escapeHtml(filePath)}</small>` : ""}
   </div>`;
 }
 
@@ -2119,6 +2129,7 @@ async function signup() {
 }
 
 async function logout() {
+  if (!confirmLeaveProtectedData("выйти из приложения", true)) return;
   if (supabaseClient) await supabaseClient.auth.signOut();
   clearRememberedAuth();
   state.user = null;
@@ -2128,6 +2139,8 @@ async function logout() {
   state.photos = [];
   state.photoScopeId = null;
   state.hiddenForeignPhotos = 0;
+  state.formDirty = false;
+  state.formBaseline = "";
   showApp(false);
   updateRememberedAuthStatus();
 }
@@ -2416,6 +2429,7 @@ function showNewMeasurementModePicker() {
 }
 
 function newMeasurement(mode = MEASUREMENT_MODE_DEFAULT) {
+  if (!confirmLeaveProtectedData("создать новый замер")) return;
   const normalizedMode = normalizeMeasurementMode(mode);
   state.selected = {
     number: createMeasurementNumber(),
@@ -2443,6 +2457,7 @@ function newMeasurement(mode = MEASUREMENT_MODE_DEFAULT) {
 async function selectMeasurement(id, options = {}) {
   const measurement = state.measurements.find((m) => m.id === id);
   if (!measurement) return;
+  if (!options.skipProtection && state.selected?.id !== id && !confirmLeaveProtectedData("открыть другой замер")) return;
   state.selected = measurement;
   state.photos = [];
   state.photoScopeId = state.selected.id;
@@ -2495,6 +2510,8 @@ function fillForm(m) {
   window.TeksturaZamerState = state;
   document.dispatchEvent(new CustomEvent("tekstura:measurement-loaded", { detail: { measurement: m } }));
   applyRoleUI();
+  state.formDirty = false;
+  state.formBaseline = measurementFormSafetyFingerprint();
 }
 
 function getRequiredClientErrors(options = {}) {
@@ -2694,7 +2711,7 @@ async function saveMeasurement(options = {}) {
   state.photoScopeId = savedMeasurement.id;
   await loadMeasurements();
   if (!state.measurements.some((item) => item.id === savedMeasurement.id)) replaceMeasurementInState(savedMeasurement);
-  await selectMeasurement(savedMeasurement.id, { mode: "edit" });
+  await selectMeasurement(savedMeasurement.id, { mode: "edit", skipProtection: true });
   if (!options.skipPendingPhotoUpload && hasPendingPhotoFile()) {
     const savedPhoto = await ensurePendingPhotoSaved("сохранением замера");
     if (!savedPhoto) return null;
@@ -2721,7 +2738,161 @@ async function setStatus(status, extra = {}, options = {}) {
   if (error) throw error;
   state.selected = data;
   await loadMeasurements();
-  await selectMeasurement(data.id, { mode: "edit" });
+  await selectMeasurement(data.id, { mode: "edit", skipProtection: true });
+}
+
+function selectedMatchesMeasurement(measurement) {
+  if (!measurement || !state.selected) return false;
+  return Boolean(
+    (measurement.local_id && measurement.local_id === state.selected.local_id)
+    || (measurement.id && measurement.id === state.selected.id)
+    || (measurement.server_id && measurement.server_id === state.selected.id)
+  );
+}
+
+function measurementFormSafetyFingerprint() {
+  const form = $("#measurement-form");
+  if (!form) return "";
+  return JSON.stringify(Array.from(new FormData(form).entries())
+    .filter(([, value]) => typeof value === "string")
+    .map(([key, value]) => [key, value])
+    .sort(([leftKey, leftValue], [rightKey, rightValue]) => (
+      leftKey.localeCompare(rightKey) || leftValue.localeCompare(rightValue)
+    )));
+}
+
+function measurementSafetyInput(measurement, photos = []) {
+  const selected = selectedMatchesMeasurement(measurement);
+  return {
+    measurement,
+    photos,
+    unsavedChanges: selected && (
+      state.formDirty
+      || (state.formBaseline && measurementFormSafetyFingerprint() !== state.formBaseline)
+    ),
+    pendingPhotoFiles: selected ? state.pendingPhotoFiles.length : 0,
+    activeSync: Boolean(measurement?.local_id && (
+      state.offlineSyncInFlight.has(measurement.local_id)
+      || state.offlineSyncCoordinator?.isLocked?.(measurement.local_id)
+    )),
+  };
+}
+
+function backupFormDataForMeasurement(measurement) {
+  if (selectedMatchesMeasurement(measurement) && $("#measurement-form") && !$("#measurement-form").classList.contains("hidden")) {
+    const current = getFormData();
+    return { client: current.client, measurement: current.measurement };
+  }
+  return measurement.form_data || {
+    client: measurement.clients || {},
+    measurement,
+  };
+}
+
+function exportMeasurementSafetyBackup(measurement, photos = []) {
+  const formData = backupFormDataForMeasurement(measurement);
+  const measurementFields = formData.measurement || measurement;
+  const pendingFiles = selectedMatchesMeasurement(measurement)
+    ? state.pendingPhotoFiles.map((file) => ({
+      file_name: file.name || "photo",
+      mime_type: file.type || "",
+      size_bytes: Number(file.size || 0),
+      sync_status: "pending",
+      file,
+    }))
+    : [];
+  const backup = deletionSafety.buildBackup({
+    measurement: {
+      ...measurement,
+      clients: formData.client || measurement.clients || {},
+      ...measurementFields,
+    },
+    formData,
+    drawingInputs: {
+      drawing_project_json: safeJsonValue(measurementFields.drawing_project_json || measurement.drawing_project_json || {}),
+      finish_dimensions_json: safeJsonValue(measurementFields.finish_dimensions_json || measurement.finish_dimensions_json || {}),
+      drawing_svg: measurementFields.drawing_svg || measurement.drawing_svg || "",
+    },
+    photos: [...photos, ...pendingFiles],
+  });
+  const safeNumber = safeSlug(measurement.temp_number || measurement.number || "zamer");
+  downloadText(`${safeNumber}_rezervnaya_kopiya.json`, JSON.stringify(backup, null, 2), "application/json;charset=utf-8");
+  return backup;
+}
+
+function authorizeMeasurementDeletion(measurement, photos = [], options = {}) {
+  if (!deletionSafety) {
+    setMessage(options.messageTarget || $("#form-message"), "Защита удаления не загрузилась. Удаление остановлено.", "error");
+    return false;
+  }
+  const result = deletionSafety.classifyMeasurement(measurementSafetyInput(measurement, photos));
+  const summary = deletionSafety.russianDeletionSummary(result, {
+    itemLabel: options.itemLabel || "замер",
+    photoCount: photos.length,
+  });
+  if (result.classification !== deletionSafety.CLASSIFICATION.BLOCKED_UNTIL_SYNC_OR_EXPORT) {
+    return deletionSafety.canProceedWithDeletion(result, {
+      confirmed: confirm(`${summary}\n\nПродолжить подтверждённое удаление?`),
+    });
+  }
+  const exportAccepted = confirm(`${summary}\n\nНемедленное удаление заблокировано. Сохранить резервную JSON-копию перед продолжением?`);
+  if (!exportAccepted) {
+    setMessage(options.messageTarget || $("#form-message"), "Удаление отменено: защищённые данные сохранены.", "error");
+    return false;
+  }
+  exportMeasurementSafetyBackup(measurement, photos);
+  const phrase = prompt(
+    `Резервная JSON-копия сохранена. Локальные файлы фото в неё не входят — при необходимости сохраните их отдельно.\n\n`
+    + `Для удаления введите точно: ${deletionSafety.CONFIRMATION_PHRASE}`,
+  );
+  const authorized = deletionSafety.canProceedWithDeletion(result, { backupExported: true, phrase });
+  if (!authorized) {
+    setMessage(options.messageTarget || $("#form-message"), "Фраза подтверждения не совпала. Удаление отменено.", "error");
+    return false;
+  }
+  return authorized;
+}
+
+async function authorizeServerMeasurementDeletion(measurement, options = {}) {
+  if (!supabaseClient || !navigator.onLine) {
+    showOfflineState();
+    return false;
+  }
+  const mappedDraft = state.offlineDrafts.find((draft) => String(draft.server_id || "") === String(measurement?.id || ""));
+  const localPhotos = mappedDraft ? await listLocalOfflinePhotos(mappedDraft.local_id) : [];
+  const { data: remotePhotos, error } = await supabaseClient
+    .from("measurement_photos")
+    .select("id, measurement_id, file_path, photo_type")
+    .eq("measurement_id", measurement.id);
+  if (error) {
+    setMessage(options.messageTarget || $("#form-message"), "Не удалось подтвердить состояние фото. Удаление остановлено без изменения данных.", "error");
+    return false;
+  }
+  const photos = [...localPhotos, ...(remotePhotos || []).filter((photo) => !localPhotos.some((local) => local.server_photo_id && local.server_photo_id === photo.id))];
+  const safetyMeasurement = mappedDraft ? { ...measurement, ...mappedDraft, id: measurement.id } : measurement;
+  return authorizeMeasurementDeletion(safetyMeasurement, photos, options);
+}
+
+function immediateProtectionContexts(includeAllDrafts = true) {
+  const contexts = includeAllDrafts ? state.offlineDrafts.map((draft) => ({
+    measurement: draft,
+    photos: Array.from({ length: Number(draft.photo_summary?.pending || draft.photo_summary?.errors || 0) }, (_, index) => ({
+      local_photo_id: `pending-${index}`,
+      sync_status: "pending",
+    })),
+  })) : [];
+  if (state.selected) {
+    contexts.push(measurementSafetyInput(state.selected, selectedPhotos()));
+  }
+  return contexts;
+}
+
+function confirmLeaveProtectedData(actionLabel, includeAllDrafts = false) {
+  if (!deletionSafety?.shouldWarnOnNavigation(immediateProtectionContexts(includeAllDrafts))) return true;
+  return confirm(
+    `Есть несохранённые или несинхронизированные данные. Если ${actionLabel}, текущие изменения или доступ к локальным данным могут быть потеряны.\n\n`
+    + "Сначала сохраните или синхронизируйте замер. Всё равно продолжить?",
+  );
 }
 
 
@@ -2730,6 +2901,8 @@ function resetSelectedMeasurement(message = "") {
   state.photos = [];
   state.photoScopeId = null;
   state.hiddenForeignPhotos = 0;
+  state.formDirty = false;
+  state.formBaseline = "";
   renderStats();
   renderList();
   showWorkspacePanel("empty");
@@ -2764,8 +2937,7 @@ async function moveSelectedMeasurementToTrash() {
     return;
   }
   if (!state.selected?.id) return;
-  const measurementNumber = state.selected.number || "замер";
-  if (!confirm(`Переместить замер ${measurementNumber} в корзину? Его можно будет восстановить.`)) return;
+  if (!await authorizeServerMeasurementDeletion(state.selected, { itemLabel: "замер (перемещение в корзину)" })) return;
   if (!requireOnlineSupabaseAction()) return;
 
   const { data, error } = await supabaseClient
@@ -2800,7 +2972,7 @@ async function restoreSelectedMeasurementFromTrash() {
   if (error) throw error;
   replaceMeasurementInState(data);
   await loadMeasurements();
-  await selectMeasurement(data.id);
+  await selectMeasurement(data.id, { skipProtection: true });
   setMessage($("#form-message"), "Замер восстановлен.", "ok");
   alert("Замер восстановлен.");
 }
@@ -2843,10 +3015,12 @@ function ensurePermanentDeletePassword(messageTarget = $("#form-message")) {
 function explainDeleteError(error) {
   const message = error?.message || String(error);
   const lower = message.toLowerCase();
+  if (lower.includes("принадлежност") || lower.includes("неоднознач")) return message;
+  if (isOfflineNetworkError(error)) return "Нет соединения. Удаление остановлено без изменения локальных данных.";
   if (lower.includes("row-level security") || lower.includes("permission denied") || lower.includes("not authorized") || lower.includes("unauthorized") || lower.includes("42501")) {
-    return `${message}. Проверьте DELETE policies RLS для measurements, measurement_photos и clients.`;
+    return "Недостаточно прав для безопасного удаления. Обновите список, чтобы проверить состояние данных.";
   }
-  return message;
+  return "Не удалось безопасно завершить удаление. Обновите список и повторите попытку; при сомнении обратитесь к администратору.";
 }
 
 async function permanentDeleteMeasurementById(measurement) {
@@ -2857,10 +3031,28 @@ async function permanentDeleteMeasurementById(measurement) {
 
   const { data: photos, error: photosError } = await supabaseClient
     .from("measurement_photos")
-    .select("file_path")
+    .select("id, measurement_id, file_path")
     .eq("measurement_id", measurement.id);
   if (photosError) throw new Error(`Ошибка поиска фото замера: ${photosError.message || photosError}`);
 
+  for (const photo of photos || []) {
+    const { data: references, error: referencesError } = await supabaseClient
+      .from("measurement_photos")
+      .select("id, measurement_id, file_path")
+      .eq("file_path", photo.file_path);
+    if (referencesError) throw new Error("Не удалось подтвердить принадлежность файлов. Удаление остановлено.");
+    const ownership = deletionSafety.validatePhotoDeletionOwnership({
+      photo,
+      measurementId: measurement.id,
+      measurementNumber: measurement.number,
+      pathReferences: references,
+      pathBelongsToMeasurement: window.TeksturaPhotoPaths?.photoPathBelongsToMeasurement,
+      recordBelongsToMeasurement: (candidate, owner) => (
+        window.TeksturaPhotoPaths?.filterPhotoRecordsForMeasurement?.([candidate], owner)?.length === 1
+      ),
+    });
+    if (!ownership.allowed) throw new Error("Принадлежность одного из файлов неоднозначна. Удаление остановлено без изменения данных.");
+  }
   await removeMeasurementStorageFiles((photos || []).map((photo) => photo.file_path));
 
   const { error: photoRowsError } = await supabaseClient
@@ -2890,8 +3082,8 @@ async function permanentDeleteSelectedMeasurement() {
   }
   if (!state.selected?.id) return;
   const measurement = state.selected;
+  if (!await authorizeServerMeasurementDeletion(measurement, { itemLabel: "замер навсегда" })) return;
   if (!ensurePermanentDeletePassword($("#form-message"))) return;
-  if (!confirm(`Удалить замер ${measurement.number || "замер"} навсегда из Supabase? Будут удалены замер, фото и файлы Storage. Это действие нельзя отменить.`)) return;
   if (!requireOnlineSupabaseAction()) return;
 
   try {
@@ -2946,8 +3138,10 @@ async function deleteSelectedTrashMeasurements() {
     setTrashActionsMessage("Выберите замеры для удаления.", "error");
     return;
   }
+  for (const measurement of measurements) {
+    if (!await authorizeServerMeasurementDeletion(measurement, { itemLabel: "выбранный замер навсегда", messageTarget: $("#trash-actions-message") })) return;
+  }
   if (!ensurePermanentDeletePassword($("#trash-actions-message"))) return;
-  if (!confirm("Удалить выбранные замеры навсегда из Supabase? Будут удалены замеры, фото и файлы Storage. Это действие нельзя отменить.")) return;
   if (!requireOnlineSupabaseAction()) return;
   await bulkPermanentDeleteMeasurements(measurements, "Выбранные замеры полностью удалены из Supabase.");
 }
@@ -2962,8 +3156,10 @@ async function clearTrashMeasurements() {
     setTrashActionsMessage("Корзина уже пуста.", "ok");
     return;
   }
+  for (const measurement of measurements) {
+    if (!await authorizeServerMeasurementDeletion(measurement, { itemLabel: "замер из корзины навсегда", messageTarget: $("#trash-actions-message") })) return;
+  }
   if (!ensurePermanentDeletePassword($("#trash-actions-message"))) return;
-  if (!confirm("Очистить всю корзину навсегда? Будут удалены все замеры из корзины, фото и файлы Storage. Это действие нельзя отменить.")) return;
   if (!requireOnlineSupabaseAction()) return;
   await bulkPermanentDeleteMeasurements(measurements, "Корзина полностью очищена из Supabase.");
 }
@@ -3179,7 +3375,6 @@ function previewPhotoMarkup() {
     <div class="preview-photo-card">
       ${media}
       <b>${previewValue(type, "Фото")}</b>
-      <span>${previewValue(filePath, "")}</span>
     </div>`;
   }).join("")}</div>`;
 }
@@ -3600,7 +3795,6 @@ function renderPhotos() {
       ${media}
       <div class="photo-card-body">
         <b>${escapeHtml(titleText)}</b>
-        <span class="photo-path">${escapeHtml(filePath)}</span>
         <button type="button" class="btn danger photo-delete-btn" data-delete-photo-id="${escapeHtml(p.id)}">Убрать фото из этого замера</button>
       </div>
     </div>`;
@@ -3759,8 +3953,10 @@ async function deletePhoto(photoId) {
     if (!photoId) return;
     const photo = selectedPhotos().find((item) => item.local_photo_id === photoId);
     if (!photo) return setMessage($("#form-message"), "Это локальное фото не относится к открытому TEMP-черновику.", "error");
-    if (!confirm(`Удалить фото «${photo.photo_type || "Фото"}» только с этого телефона?`)) return;
-    await window.TeksturaOfflineDB?.deleteOfflinePhoto?.(photoId);
+    if (!authorizeMeasurementDeletion(state.selected, [photo], { itemLabel: "локальное фото" })) return;
+    const deleteLocalPhoto = window.TeksturaOfflineDB?.deleteOfflinePhotoSafely;
+    if (typeof deleteLocalPhoto !== "function") throw new Error("Безопасное локальное удаление фото недоступно. Фото сохранено.");
+    await deleteLocalPhoto(photoId, state.selected.local_id);
     state.photos = await listLocalOfflinePhotos(state.selected.local_id);
     state.photoScopeId = state.selected.local_id;
     renderPhotos();
@@ -3776,27 +3972,61 @@ async function deletePhoto(photoId) {
   if (!measurementId || !photoId) return;
   const photo = selectedPhotos().find((item) => item.id === photoId);
   if (!photo) return setMessage($("#form-message"), "Это фото не относится к открытому замеру.", "error");
-  if (!confirm(`Удалить фото «${photo.photo_type || "Фото"}» из этого замера?`)) return;
+  const { data: remotePhoto, error: photoLookupError } = await supabaseClient
+    .from("measurement_photos")
+    .select("id, measurement_id, file_path, photo_type")
+    .eq("id", photoId)
+    .eq("measurement_id", measurementId)
+    .maybeSingle();
+  if (photoLookupError || !remotePhoto) {
+    setMessage($("#form-message"), "Принадлежность фото текущему замеру не подтверждена. Удаление остановлено.", "error");
+    return;
+  }
+  const { data: pathReferences, error: referenceError } = await supabaseClient
+    .from("measurement_photos")
+    .select("id, measurement_id, file_path")
+    .eq("file_path", remotePhoto.file_path);
+  const ownership = !referenceError && deletionSafety?.validatePhotoDeletionOwnership({
+    photo: remotePhoto,
+    measurementId,
+    measurementNumber: state.selected.number,
+    pathReferences,
+    pathBelongsToMeasurement: window.TeksturaPhotoPaths?.photoPathBelongsToMeasurement,
+    recordBelongsToMeasurement: (candidate, owner) => (
+      window.TeksturaPhotoPaths?.filterPhotoRecordsForMeasurement?.([candidate], owner)?.length === 1
+    ),
+  });
+  if (!ownership?.allowed) {
+    setMessage($("#form-message"), "Принадлежность файла неоднозначна. Фото и файл не удалены.", "error");
+    return;
+  }
+  if (!confirm(`Будет удалено фото «${remotePhoto.photo_type || "Фото"}» из текущего замера. После удаления восстановление невозможно. Продолжить?`)) return;
   setMessage($("#form-message"), "Удаляю фото...");
-  const { error: deleteLinkError } = await supabaseClient
+  const { data: deletedRows, error: deleteLinkError } = await supabaseClient
     .from("measurement_photos")
     .delete()
     .eq("id", photoId)
-    .eq("measurement_id", measurementId);
+    .eq("measurement_id", measurementId)
+    .select("id");
 
   if (deleteLinkError) {
     const message = String(deleteLinkError.message || "").toLowerCase();
     const details = String(deleteLinkError.details || "").toLowerCase();
     const denied = message.includes("permission denied") || message.includes("rls") || details.includes("permission denied") || details.includes("rls");
     if (denied) {
-      setMessage($("#form-message"), "Нет прав Supabase на удаление фото. Нужна настройка RLS для measurement_photos/storage.objects.", "error");
+      setMessage($("#form-message"), "Недостаточно прав для удаления фото. Фото и файл оставлены без изменений.", "error");
       return;
     }
-    throw deleteLinkError;
+    throw new Error("Не удалось безопасно удалить фото. Обновите замер и повторите попытку.");
   }
 
-  if (photo.file_path) {
-    const { error: storageError } = await supabaseClient.storage.from("measurement-photos").remove([photo.file_path]);
+  if (!Array.isArray(deletedRows) || deletedRows.length !== 1) {
+    setMessage($("#form-message"), "Удаление записи фото не подтверждено. Файл сохранён без изменений.", "error");
+    return;
+  }
+
+  if (remotePhoto.file_path) {
+    const { error: storageError } = await supabaseClient.storage.from("measurement-photos").remove([remotePhoto.file_path]);
     if (storageError) {
       const storageMessage = String(storageError.message || "").toLowerCase();
       const missingObject = storageMessage.includes("not found") || storageMessage.includes("no such") || storageMessage.includes("404");
@@ -3860,20 +4090,7 @@ function downloadText(filename, text, type) {
 
 function downloadJson() {
   if (!state.selected) return;
-  ensureDynamicMeasurementFields();
-  const form = $("#measurement-form");
-  const drawingProject = form?.drawing_project_json?.value || state.selected.drawing_project_json || null;
-  const finishDimensions = form?.finish_dimensions_json?.value || state.selected.finish_dimensions_json || null;
-  const drawingSvg = form?.drawing_svg?.value || state.selected.drawing_svg || null;
-  downloadText(`${state.selected.number}_data.json`, JSON.stringify({
-    measurement: {
-      ...state.selected,
-      drawing_project_json: safeJsonValue(drawingProject),
-      finish_dimensions_json: safeJsonValue(finishDimensions),
-      drawing_svg: drawingSvg,
-    },
-    photos: selectedPhotos(),
-  }, null, 2), "application/json");
+  exportMeasurementSafetyBackup(state.selected, selectedPhotos());
 }
 function downloadCsv() { if (state.selected) { const m = state.selected; const c = m.clients || {}; downloadText(`${m.number}_data.csv`, `Номер;Статус;Клиент;Телефон;Адрес\n${m.number};${m.status};${c.name || ""};${c.phone || ""};${c.address || ""}`, "text/csv;charset=utf-8"); } }
 
@@ -3943,9 +4160,23 @@ function bind() {
     if (event.target.closest("[data-print-preview]")) window.print();
   });
   $("#measurement-form").addEventListener("submit", (event) => { event.preventDefault(); saveMeasurement().catch((e) => setMessage($("#form-message"), userFacingError(e), "error")); });
-  $("#measurement-form").addEventListener("input", scheduleOfflineDraftAutosave);
-  $("#measurement-form").addEventListener("change", scheduleOfflineDraftAutosave);
-  window.addEventListener("beforeunload", () => { if (isLocalOfflineDraft()) saveLocalOfflineDraftNow({ silent: true }); });
+  $("#measurement-form").addEventListener("input", () => {
+    state.formDirty = true;
+    scheduleOfflineDraftAutosave();
+  });
+  $("#measurement-form").addEventListener("change", () => {
+    state.formDirty = true;
+    scheduleOfflineDraftAutosave();
+  });
+  window.addEventListener("beforeunload", (event) => {
+    if (isLocalOfflineDraft()) saveLocalOfflineDraftNow({ silent: true }).catch(() => {});
+    if (!deletionSafety?.shouldWarnOnNavigation(immediateProtectionContexts())) return;
+    event.preventDefault();
+    event.returnValue = "";
+  });
+  window.addEventListener("pagehide", () => {
+    if (isLocalOfflineDraft()) saveLocalOfflineDraftNow({ silent: true }).catch(() => {});
+  });
   photoFileInputs().forEach((input) => input.addEventListener("change", handlePhotoInputChange));
   $("#photos-list").addEventListener("click", (event) => {
     const id = event.target.closest("[data-delete-photo-id]")?.dataset.deletePhotoId;
@@ -4030,7 +4261,7 @@ async function bootTeksturaApp() {
     const errorMessage = userFacingError(error);
     if (bootFallback) bootFallback.style.display = "block";
     if (message) {
-      message.textContent = "Ошибка запуска приложения: " + errorMessage + ". Включите интернет, нажмите Обновить или очистите данные сайта.";
+      message.textContent = "Ошибка запуска приложения. Включите интернет и нажмите Обновить. Не очищайте данные сайта: там могут храниться локальные замеры и фото.";
     }
     setMessage(document.querySelector("#auth-message"), errorMessage, "error");
   }

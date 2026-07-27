@@ -244,6 +244,7 @@ function normalizedGeometry(geometry) {
       id: winder.id,
       kind: winder.kind,
       number: winder.number || 0,
+      center: winder.center ? roundedPoint(winder.center) : null,
       points: winder.points.map(roundedPoint),
     })),
     route: geometry.route.map(roundedPoint),
@@ -311,6 +312,107 @@ function assertOrientation(fixture, geometry) {
   } else {
     assert.ok(flight1.x > flight2.x, `${fixture.type} flight 1 must start right of flight 2`);
   }
+}
+
+function pointsEqual(a, b, epsilon = 0.001) {
+  return Math.abs(a.x - b.x) <= epsilon && Math.abs(a.y - b.y) <= epsilon;
+}
+
+function polygonArea(points) {
+  return Math.abs(points.reduce((sum, point, index) => {
+    const next = points[(index + 1) % points.length];
+    return sum + point.x * next.y - next.x * point.y;
+  }, 0)) / 2;
+}
+
+function orientation(a, b, c) {
+  return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+}
+
+function pointOnSegment(point, start, end, epsilon = 0.001) {
+  return Math.abs(orientation(start, end, point)) <= epsilon
+    && point.x >= Math.min(start.x, end.x) - epsilon
+    && point.x <= Math.max(start.x, end.x) + epsilon
+    && point.y >= Math.min(start.y, end.y) - epsilon
+    && point.y <= Math.max(start.y, end.y) + epsilon;
+}
+
+function segmentsProperlyIntersect(a, b, c, d, epsilon = 0.001) {
+  const abC = orientation(a, b, c);
+  const abD = orientation(a, b, d);
+  const cdA = orientation(c, d, a);
+  const cdB = orientation(c, d, b);
+  return ((abC > epsilon && abD < -epsilon) || (abC < -epsilon && abD > epsilon))
+    && ((cdA > epsilon && cdB < -epsilon) || (cdA < -epsilon && cdB > epsilon));
+}
+
+function assertSimplePolygon(points, label) {
+  assert.ok(points.length >= 3, `${label} must contain at least three points`);
+  assert.ok(polygonArea(points) > 0.001, `${label} must have non-zero area`);
+  for (let i = 0; i < points.length; i += 1) {
+    const a = points[i];
+    const b = points[(i + 1) % points.length];
+    for (let j = i + 1; j < points.length; j += 1) {
+      if (j === i || j === (i + 1) % points.length || (j + 1) % points.length === i) continue;
+      const c = points[j];
+      const d = points[(j + 1) % points.length];
+      assert.equal(segmentsProperlyIntersect(a, b, c, d), false, `${label} edges must not self-intersect`);
+    }
+  }
+}
+
+function pointInPolygon(point, polygon) {
+  if (polygon.some((start, index) => pointOnSegment(point, start, polygon[(index + 1) % polygon.length]))) return true;
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const a = polygon[i];
+    const b = polygon[j];
+    if ((a.y > point.y) !== (b.y > point.y)
+      && point.x < (b.x - a.x) * (point.y - a.y) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  return inside;
+}
+
+function polygonLabelPoint(points) {
+  return {
+    x: points.reduce((sum, point) => sum + point.x, 0) / points.length,
+    y: points.reduce((sum, point) => sum + point.y, 0) / points.length,
+  };
+}
+
+function pointOnRectBoundary(point, rect, epsilon = 0.001) {
+  const insideX = point.x >= rect.x - epsilon && point.x <= rect.x + rect.w + epsilon;
+  const insideY = point.y >= rect.y - epsilon && point.y <= rect.y + rect.h + epsilon;
+  const onVertical = Math.abs(point.x - rect.x) <= epsilon || Math.abs(point.x - (rect.x + rect.w)) <= epsilon;
+  const onHorizontal = Math.abs(point.y - rect.y) <= epsilon || Math.abs(point.y - (rect.y + rect.h)) <= epsilon;
+  return insideX && insideY && (onVertical || onHorizontal);
+}
+
+function assertRadialWinderGeometry(fixture, geometry, count) {
+  const turn = geometry.rects.find((rect) => rect.id === "turn");
+  const steps = geometry.winders.filter((item) => item.kind === "step");
+  const expectedCenter = { x: turn.x + turn.w / 2, y: turn.y + turn.h / 2 };
+  assert.equal(steps.length, count, `${fixture.type} must render ZN=${count} tread regions`);
+  assert.equal(new Set(steps.map((step) => `${rounded(step.points[0].x)},${rounded(step.points[0].y)}`)).size, 1, `${fixture.type} must not shift separator apexes`);
+  let area = 0;
+  steps.forEach((step, index) => {
+    assert.ok(pointsEqual(step.center, expectedCenter), `${fixture.type} step ${index + 1} center metadata`);
+    assert.ok(pointsEqual(step.points[0], expectedCenter), `${fixture.type} step ${index + 1} radial origin`);
+    assert.ok(pointOnRectBoundary(step.points[1], turn), `${fixture.type} step ${index + 1} first ray boundary hit`);
+    assert.ok(pointOnRectBoundary(step.points.at(-1), turn), `${fixture.type} step ${index + 1} second ray boundary hit`);
+    assertSimplePolygon(step.points, `${fixture.type} step ${index + 1}`);
+    assert.ok(pointInPolygon(polygonLabelPoint(step.points), step.points), `${fixture.type} label ${index + 1} must remain inside its tread`);
+    area += polygonArea(step.points);
+  });
+  assert.ok(Math.abs(area - turn.w * turn.h) <= 0.01, `${fixture.type} tread regions must cover the rectangular turn`);
+}
+
+function normalizedWinderSteps(geometry, mirror = false) {
+  const turn = geometry.rects.find((rect) => rect.id === "turn");
+  return geometry.winders.filter((item) => item.kind === "step").map((step) => step.points.map((point) => ({
+    x: rounded(mirror ? 1 - (point.x - turn.x) / turn.w : (point.x - turn.x) / turn.w),
+    y: rounded((point.y - turn.y) / turn.h),
+  })));
 }
 
 test("inventory and form-selection rules cover exactly the 12 protected variants", () => {
@@ -387,6 +489,43 @@ for (const fixture of SVG_VARIANT_FIXTURES) {
     assert.equal(actualHash, fixture.expected.geometryHash);
   });
 }
+
+test("all protected winders use the rectangle center as one radial origin for ZN 2, 3, and 4", () => {
+  const harness = createDrawingHarness();
+  const fixtures = SVG_VARIANT_FIXTURES.filter((fixture) => fixture.type.includes("winder"));
+  for (const fixture of fixtures) {
+    for (const count of [2, 3, 4]) {
+      configureFixture(harness, fixture);
+      harness.setField("winder_steps_count", count);
+      const geometry = clone(harness.hook.buildGeometry());
+      const svg = harness.hook.renderSvg(geometry);
+      assertRadialWinderGeometry(fixture, geometry, count);
+      assert.equal(classCount(svg, "winder-step"), count);
+      assert.doesNotMatch(svg, FORBIDDEN_OUTPUT);
+    }
+  }
+});
+
+test("left and right L/U winder tread regions are exact mirrors", () => {
+  const harness = createDrawingHarness();
+  const pairs = [
+    ["ready_l_left_winder", "ready_l_right_winder"],
+    ["ready_u_winder_left", "ready_u_winder_right"],
+  ];
+  for (const [leftType, rightType] of pairs) {
+    const left = SVG_VARIANT_FIXTURES.find((fixture) => fixture.type === leftType);
+    const right = SVG_VARIANT_FIXTURES.find((fixture) => fixture.type === rightType);
+    for (const count of [2, 3, 4]) {
+      configureFixture(harness, left);
+      harness.setField("winder_steps_count", count);
+      const leftGeometry = clone(harness.hook.buildGeometry());
+      configureFixture(harness, right);
+      harness.setField("winder_steps_count", count);
+      const rightGeometry = clone(harness.hook.buildGeometry());
+      assert.deepEqual(normalizedWinderSteps(leftGeometry, true), normalizedWinderSteps(rightGeometry));
+    }
+  }
+});
 
 test("desktop, tablet, and phone layouts preserve semantic content without cropping", () => {
   const harness = createDrawingHarness();

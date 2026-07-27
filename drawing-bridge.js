@@ -1285,10 +1285,8 @@
       addStepLabel("flight1", "N1", p.firstFlightSteps);
       addStepLabel("flight2", "N2", p.secondFlightSteps);
       if (v.turn === "winder") {
-        const pivot = right ? { x: turn.x, y: turn.y + turn.h } : { x: turn.x + turn.w, y: turn.y + turn.h };
-        const startAngle = right ? -Math.PI / 2 : Math.PI;
-        const endAngle = right ? 0 : Math.PI * 1.5;
-        winders.push(...buildWinderPolygons(turn, pivot, startAngle, endAngle, zn, "l"));
+        const center = turningCenter(turn);
+        winders.push(...buildWinderPolygons(turn, center, Math.PI / 2, right ? -1 : 1, zn, "l"));
       }
       route = !right
         ? [{ x: f1.x + f1.w / 2, y: f1.y + f1.h - 80 }, { x: f1.x + f1.w / 2, y: turn.y + turn.h / 2 }, { x: f2.x + f2.w - 80, y: f2.y + f2.h / 2 }]
@@ -1320,9 +1318,8 @@
       addStepLabel("flight1", "N1", p.firstFlightSteps);
       addStepLabel("flight2", "N2", p.secondFlightSteps);
       if (v.turn === "winder") {
-        const pivot = { x: turn.x + turn.w / 2, y: turn.y + turn.h };
-        const leftToRight = side === "left";
-        winders.push(...buildWinderPolygons(turn, pivot, leftToRight ? Math.PI : Math.PI * 2, leftToRight ? Math.PI * 2 : Math.PI, zn, "u"));
+        const center = turningCenter(turn);
+        winders.push(...buildWinderPolygons(turn, center, Math.PI / 2, side === "left" ? 1 : -1, zn, "u"));
       }
       route = [
         { x: f1.x + f1.w / 2, y: f1.y + f1.h - 80 },
@@ -1347,7 +1344,11 @@
     return Math.max(min, Math.min(max, value));
   }
 
-  function rayRectIntersection(pivot, angle, rect) {
+  function turningCenter(rect) {
+    return { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 };
+  }
+
+  function rayRectIntersection(origin, angle, rect) {
     const dx = Math.cos(angle);
     const dy = Math.sin(angle);
     const candidates = [];
@@ -1357,32 +1358,66 @@
     const maxY = rect.y + rect.h;
     if (Math.abs(dx) > 0.0001) {
       [minX, maxX].forEach((x) => {
-        const t = (x - pivot.x) / dx;
-        const y = pivot.y + t * dy;
+        const t = (x - origin.x) / dx;
+        const y = origin.y + t * dy;
         if (t > 0.0001 && y >= minY - 0.0001 && y <= maxY + 0.0001) candidates.push({ t, point: { x, y: clamp(y, minY, maxY) } });
       });
     }
     if (Math.abs(dy) > 0.0001) {
       [minY, maxY].forEach((y) => {
-        const t = (y - pivot.y) / dy;
-        const x = pivot.x + t * dx;
+        const t = (y - origin.y) / dy;
+        const x = origin.x + t * dx;
         if (t > 0.0001 && x >= minX - 0.0001 && x <= maxX + 0.0001) candidates.push({ t, point: { x: clamp(x, minX, maxX), y } });
       });
     }
     candidates.sort((a, b) => a.t - b.t);
-    return candidates[0]?.point || pivot;
+    return candidates[0]?.point || origin;
   }
 
-  function buildWinderPolygons(rect, pivot, startAngle, endAngle, count, idPrefix) {
+  function positiveAngle(value) {
+    const fullTurn = Math.PI * 2;
+    return ((value % fullTurn) + fullTurn) % fullTurn;
+  }
+
+  function angularProgress(point, center, startAngle, direction) {
+    const angle = Math.atan2(point.y - center.y, point.x - center.x);
+    return positiveAngle((angle - startAngle) * direction);
+  }
+
+  function buildWinderPolygons(rect, center, startAngle, direction, count, idPrefix) {
     const steps = Math.max(1, Math.round(count));
-    const hits = Array.from({ length: steps + 1 }, (_, index) => {
-      const ratio = index / steps;
-      return rayRectIntersection(pivot, startAngle + (endAngle - startAngle) * ratio, rect);
-    });
-    const result = [];
-    result.push({ id: `${idPrefix}-envelope`, kind: "envelope", points: [pivot, ...hits] });
+    const sweepDirection = direction < 0 ? -1 : 1;
+    const fullTurn = Math.PI * 2;
+    const corners = [
+      { x: rect.x, y: rect.y },
+      { x: rect.x + rect.w, y: rect.y },
+      { x: rect.x + rect.w, y: rect.y + rect.h },
+      { x: rect.x, y: rect.y + rect.h },
+    ];
+    const result = [{ id: `${idPrefix}-envelope`, kind: "envelope", points: corners }];
+    if (steps === 1) {
+      result.push({ id: `${idPrefix}-1`, kind: "step", number: 1, center, points: corners });
+      return result;
+    }
+    const hits = Array.from({ length: steps + 1 }, (_, index) => (
+      rayRectIntersection(center, startAngle + sweepDirection * fullTurn * index / steps, rect)
+    ));
+    const orderedCorners = corners
+      .map((point) => ({ point, progress: angularProgress(point, center, startAngle, sweepDirection) }))
+      .sort((a, b) => a.progress - b.progress);
     for (let i = 0; i < steps; i += 1) {
-      result.push({ id: `${idPrefix}-${i + 1}`, kind: "step", number: i + 1, points: [pivot, hits[i], hits[i + 1]] });
+      const from = fullTurn * i / steps;
+      const to = fullTurn * (i + 1) / steps;
+      const boundaryCorners = orderedCorners
+        .filter((item) => item.progress > from + 0.0001 && item.progress < to - 0.0001)
+        .map((item) => item.point);
+      result.push({
+        id: `${idPrefix}-${i + 1}`,
+        kind: "step",
+        number: i + 1,
+        center,
+        points: [center, hits[i], ...boundaryCorners, hits[i + 1]],
+      });
     }
     return result;
   }

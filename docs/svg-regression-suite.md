@@ -26,12 +26,12 @@ All fixtures use the same deliberately asymmetric representative dimensions so t
 | `ready_straight` | Прямая лестница | B1, N1 | straight | `a0f945919ef91efe` |
 | `ready_l_left_landing` | Г-образная левая | B1, B2 | left | `aa465714be69f694` |
 | `ready_l_right_landing` | Г-образная правая | B1, B2 | right | `7e98a260ecd7de45` |
-| `ready_l_left_winder` | Г-образная левая | B1, B2, ZN | left | `b2dba79a9a982ccd` |
-| `ready_l_right_winder` | Г-образная правая | B1, B2, ZN | right | `c69ebbf1fb9c6b07` |
+| `ready_l_left_winder` | Г-образная левая | B1, B2, ZN | left | `aae364225b6a51f4` |
+| `ready_l_right_winder` | Г-образная правая | B1, B2, ZN | right | `1325af7e5040e199` |
 | `ready_u_landing_left` | П-образная лестница | B1, B2, ZL, ZW | left | `91feb6fafdf622c0` |
 | `ready_u_landing_right` | П-образная лестница | B1, B2, ZL, ZW | right | `91f1b17557369258` |
-| `ready_u_winder_left` | П-образная лестница | B1, B2, ZN | left | `588ee6cb212f3b23` |
-| `ready_u_winder_right` | П-образная лестница | B1, B2, ZN | right | `338e3ee9da410a45` |
+| `ready_u_winder_left` | П-образная лестница | B1, B2, ZN | left | `32a727d5789bf5c6` |
+| `ready_u_winder_right` | П-образная лестница | B1, B2, ZN | right | `d2086721abde1920` |
 
 The empty L variants intentionally render label-only M/B dimension text. The tests preserve that exact production behavior instead of inventing numeric text that the current renderer does not show.
 
@@ -91,7 +91,8 @@ The protected generator chain is:
 1. `collectParams()` normalizes measurement values.
 2. `visibleParams()` selects the dimensions visible for variant and mode.
 3. `buildGeometry()` creates rectangles, tread lines, turn/winder polygons, route points, dimensions, step labels, flight directions, and outer bounds.
-4. `buildWinderPolygons()` and `rayRectIntersection()` generate winder envelopes and individual steps.
+4. `turningCenter()`, `buildWinderPolygons()`, and `rayRectIntersection()` generate the
+   rectangular winder envelope and individual radial tread regions from one shared turn center.
 5. `fitMargins()` reserves room for dimension labels and site markers.
 6. `fitTransform()` scales and centers geometry proportionally.
 7. `renderSvg()` writes the final SVG.
@@ -99,8 +100,8 @@ The protected generator chain is:
 
 The complete geometry/render helper inventory is:
 
-- primitive and geometry: `makeRect`, `buildGeometry`, `clamp`, `rayRectIntersection`,
-  `buildWinderPolygons`;
+- primitive and geometry: `makeRect`, `buildGeometry`, `clamp`, `turningCenter`,
+  `rayRectIntersection`, `positiveAngle`, `angularProgress`, `buildWinderPolygons`;
 - viewport and fitting: `drawingViewport`, `fitTransform`, `fitMargins`;
 - core SVG: `renderSvg`, `renderRect`, `renderStepLabels`, `renderLine`, `renderWinder`,
   `renderRoute`, `renderDimension`;
@@ -186,6 +187,9 @@ Most checks are semantic:
 - coordinate and polygon bounds;
 - expected dimension IDs, labels, and fixture values;
 - dimension, extension, hit, route, tread, opening, and winder structures;
+- a common winder-ray origin equal to the center of the actual turn rectangle;
+- ZN 2/3/4 region counts, boundary hits, non-zero area, no self-intersection, full rectangular
+  coverage, contained number labels, and exact left/right mirroring;
 - marker definitions and marker CSS contracts;
 - left/right flight placement;
 - unique critical marker IDs;

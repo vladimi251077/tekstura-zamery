@@ -155,22 +155,54 @@
     return (photos || []).sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
   }
 
-  function deleteOfflinePhoto(localPhotoId) {
-    return withStore(STORES.offlinePhotos, "readwrite", (store) => store.delete(localPhotoId));
-  }
-
-  function deleteOfflinePhotosByDraft(localDraftId) {
-    if (!localDraftId) return Promise.resolve(null);
-    return withStore(STORES.offlinePhotos, "readwrite", (store) => {
-      const request = store.index("local_draft_id").openCursor(localDraftId);
-      request.onsuccess = () => {
-        const cursor = request.result;
-        if (!cursor) return;
-        cursor.delete();
-        cursor.continue();
+  async function deleteOfflinePhotoSafely(localPhotoId, localDraftId) {
+    if (!localPhotoId || !localDraftId) throw new Error("Локальное фото не найдено.");
+    const db = await openDatabase();
+    if (!db) throw new Error("Локальное хранилище недоступно.");
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction([STORES.offlinePhotos, STORES.syncQueue], "readwrite");
+      const photos = transaction.objectStore(STORES.offlinePhotos);
+      const queue = transaction.objectStore(STORES.syncQueue);
+      let ownershipConfirmed = false;
+      let queueOwnershipAmbiguous = false;
+      const photoRequest = photos.get(localPhotoId);
+      photoRequest.onsuccess = () => {
+        const photo = photoRequest.result;
+        if (!photo || String(photo.local_draft_id || "") !== String(localDraftId)) {
+          transaction.abort();
+          return;
+        }
+        ownershipConfirmed = true;
+        const queueRequest = queue.openCursor();
+        queueRequest.onsuccess = () => {
+          const cursor = queueRequest.result;
+          if (!cursor) {
+            photos.delete(localPhotoId);
+            return;
+          }
+          const operation = cursor.value || {};
+          const payload = operation.payload || {};
+          const belongsToPhoto = String(operation.local_photo_id || payload.local_photo_id || "") === String(localPhotoId);
+          const belongsToDraft = String(operation.draft_local_id || payload.local_draft_id || "") === String(localDraftId);
+          const isPhotoOperation = String(operation.type || "").toLowerCase().includes("photo");
+          if (belongsToPhoto) {
+            cursor.delete();
+          } else if (belongsToDraft && isPhotoOperation) {
+            queueOwnershipAmbiguous = true;
+            transaction.abort();
+            return;
+          }
+          cursor.continue();
+        };
       };
-      return request;
-    });
+      transaction.oncomplete = () => resolve(true);
+      transaction.onerror = () => reject(transaction.error || new Error("Не удалось отменить локальную операцию фото."));
+      transaction.onabort = () => reject(ownershipConfirmed
+        ? (transaction.error || new Error(queueOwnershipAmbiguous
+          ? "Связанная операция фото определена неоднозначно. Удаление остановлено."
+          : "Не удалось безопасно удалить локальное фото."))
+        : new Error("Фото не принадлежит открытому TEMP-черновику."));
+    }).finally(() => db.close());
   }
 
   async function countOfflinePhotosByDraft(localDraftId) {
@@ -195,9 +227,62 @@
     return (drafts || []).sort((a, b) => String(b.updated_at || "").localeCompare(String(a.updated_at || "")));
   }
 
-  async function deleteOfflineDraft(localId) {
-    await deleteOfflinePhotosByDraft(localId);
-    return withStore(STORES.offlineDrafts, "readwrite", (store) => store.delete(localId));
+  async function deleteOfflineDraft(localId, options = {}) {
+    if (options.safetyAuthorized !== true) throw new Error("Сначала подтвердите безопасное удаление локального черновика.");
+    if (!localId) throw new Error("Локальный черновик не найден.");
+    const db = await openDatabase();
+    if (!db) throw new Error("Локальное хранилище недоступно.");
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction([STORES.offlineDrafts, STORES.offlinePhotos, STORES.syncQueue], "readwrite");
+      const drafts = transaction.objectStore(STORES.offlineDrafts);
+      const photos = transaction.objectStore(STORES.offlinePhotos);
+      const queue = transaction.objectStore(STORES.syncQueue);
+      let draftConfirmed = false;
+      let photosScanned = false;
+      let queueScanned = false;
+      const deleteDraftWhenReady = () => {
+        if (draftConfirmed && photosScanned && queueScanned) drafts.delete(localId);
+      };
+      const draftRequest = drafts.get(localId);
+      draftRequest.onsuccess = () => {
+        if (!draftRequest.result) {
+          transaction.abort();
+          return;
+        }
+        draftConfirmed = true;
+        deleteDraftWhenReady();
+      };
+      const photoRequest = photos.index("local_draft_id").openCursor(localId);
+      photoRequest.onsuccess = () => {
+        const cursor = photoRequest.result;
+        if (cursor) {
+          cursor.delete();
+          cursor.continue();
+          return;
+        }
+        photosScanned = true;
+        deleteDraftWhenReady();
+      };
+      const queueRequest = queue.openCursor();
+      queueRequest.onsuccess = () => {
+        const cursor = queueRequest.result;
+        if (cursor) {
+          const operation = cursor.value || {};
+          const payload = operation.payload || {};
+          const belongsToDraft = String(operation.draft_local_id || payload.local_draft_id || "") === String(localId);
+          if (belongsToDraft) cursor.delete();
+          cursor.continue();
+          return;
+        }
+        queueScanned = true;
+        deleteDraftWhenReady();
+      };
+      transaction.oncomplete = () => resolve(true);
+      transaction.onerror = () => reject(transaction.error || new Error("Не удалось безопасно удалить локальный черновик."));
+      transaction.onabort = () => reject(transaction.error || new Error(draftConfirmed
+        ? "Не удалось безопасно удалить локальный черновик."
+        : "Локальный черновик не найден."));
+    }).finally(() => db.close());
   }
 
   function countOfflineDrafts() {
@@ -210,8 +295,7 @@
     countOfflinePhotosByDraft,
     createOfflineDraft,
     deleteOfflineDraft,
-    deleteOfflinePhoto,
-    deleteOfflinePhotosByDraft,
+    deleteOfflinePhotoSafely,
     get,
     getOfflineDraft,
     isSupported,

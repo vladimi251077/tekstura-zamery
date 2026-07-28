@@ -78,7 +78,7 @@
       </div>
       <details>
         <summary>Показать инструкцию</summary>
-        <p>Включите интернет, откройте приложение снова и нажмите «Обновить». Если ошибка повторяется, очистите данные сайта Tekstura в Safari и добавьте приложение на экран Домой заново.</p>
+        <p>Включите интернет, откройте приложение снова и нажмите «Обновить». Не очищайте данные сайта, пока локальные замеры и фото не синхронизированы или не сохранены отдельно.</p>
       </details>
     </div>
     <div id="app">
@@ -436,7 +436,7 @@
         </section>
       </main>
     </div>
-    <script src="./offline-db.js?v=20260726-stale-sync"></script>
+    <script src="./offline-db.js?v=20260727-safe-delete"></script>
     <script>
       window.__TEKSTURA_BOOT_OK__ = false;
       window.addEventListener("error", function(event) {
@@ -444,7 +444,7 @@
         var msg = document.getElementById("boot-fallback-message");
         if (box) box.style.display = "block";
         if (msg) {
-          msg.textContent = "Ошибка запуска приложения: " + (event.message || "неизвестная ошибка") + ". Включите интернет, нажмите Обновить или очистите данные сайта.";
+          msg.textContent = "Ошибка запуска приложения. Включите интернет и нажмите Обновить. Не очищайте данные сайта: там могут храниться локальные замеры и фото.";
         }
       });
       window.addEventListener("unhandledrejection", function(event) {
@@ -453,13 +453,14 @@
         if (box) box.style.display = "block";
         if (msg) {
           var reason = event.reason && (event.reason.message || String(event.reason));
-          msg.textContent = "Ошибка запуска приложения: " + (reason || "неизвестная ошибка") + ". Включите интернет, нажмите Обновить или очистите данные сайта.";
+          msg.textContent = "Ошибка запуска приложения. Включите интернет и нажмите Обновить. Не очищайте данные сайта: там могут храниться локальные замеры и фото.";
         }
       });
     </script>
     <script src="./photo-path.js?v=20260726-phase-a"></script>
     <script src="./sync-state.js?v=20260726-phase-a"></script>
-    <script src="./app.js?v=20260726-stale-sync"></script>
+    <script src="./deletion-safety.js?v=20260727-safe-delete"></script>
+    <script src="./app.js?v=20260727-safe-delete"></script>
     <script src="./photo-preview.js?v=20260515-v14"></script>
     <script src="./details-enhance.js?v=20260515-v14"></script>
     <script src="./scheme-sketch.js?v=20260506-disabled"></script>

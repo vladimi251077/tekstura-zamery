@@ -17,6 +17,7 @@ const SUPABASE_CONNECTING_MESSAGE = "Подключаюсь к Supabase...";
 const SUPABASE_REFRESHING_MESSAGE = "Обновляю данные...";
 const PERMANENT_DELETE_PASSWORD = "del2525";
 const supabaseClient = window.supabase?.createClient ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+window.TeksturaSupabaseClient = supabaseClient;
 const syncState = window.TeksturaSyncState;
 const deletionSafety = window.TeksturaDeletionSafety;
 const offlineSyncCoordinator = syncState?.createMeasurementCoordinator();

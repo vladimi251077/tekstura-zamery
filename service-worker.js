@@ -1,4 +1,4 @@
-const CACHE_VERSION = "tekstura-offline-shell-v37";
+const CACHE_VERSION = "tekstura-offline-shell-v38";
 const APP_SHELL_CACHE = `${CACHE_VERSION}-app-shell`;
 const OFFLINE_FALLBACK_URLS = [
   "/offline-fallback.html",
@@ -141,18 +141,12 @@ function offlineFallbackResponse(status = 503) {
 
 async function cacheShellUrl(cache, url) {
   const absoluteUrl = new URL(url, self.registration.scope).href;
-  if (OFFLINE_FALLBACK_URLS.includes(url)) {
-    const fallback = offlineFallbackResponse(200);
-    await cache.put(new Request(absoluteUrl), fallback.clone());
-    await cache.put(url, fallback.clone());
-    return { url, absoluteUrl, status: 200, synthetic: true };
-  }
   const request = new Request(absoluteUrl, { cache: "reload" });
   const response = await fetch(request);
   if (!response.ok) throw new Error(`HTTP ${response.status} ${url}`);
   await cache.put(new Request(absoluteUrl), response.clone());
   await cache.put(url, response.clone());
-  return { url, absoluteUrl, status: response.status, synthetic: false };
+  return { url, absoluteUrl, status: response.status };
 }
 
 async function writePrecacheReport(cache, report) {

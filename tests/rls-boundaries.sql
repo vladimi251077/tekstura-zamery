@@ -42,6 +42,16 @@ limit 1
     ) then
       violations := array_append(violations, 'foreign Storage objects are visible');
     end if;
+    if exists (
+      select 1
+      from pg_policies
+      where (schemaname, tablename, policyname) in (
+        ('public', 'measurement_photos', 'authenticated_delete_measurement_photos'),
+        ('storage', 'objects', 'authenticated_delete_measurement_photo_objects')
+      )
+    ) then
+      violations := array_append(violations, 'broad authenticated delete policies are active');
+    end if;
 
     if cardinality(violations) > 0 then
       raise exception 'RLS boundary contract failed: %', array_to_string(violations, '; ');

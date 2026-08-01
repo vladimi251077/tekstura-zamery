@@ -12,7 +12,9 @@ The cloud project and self-hosted staging have identical relevant policy metadat
 
 The cause is a group of `USING (true)` authenticated policies combined with an unrestricted authenticated Storage read policy. PostgreSQL combines permissive policies with OR, so these policies bypass the narrower ownership predicates.
 
-`tests/rls-boundaries.sql` is the read-only regression probe. It currently fails. The exact fail-closed migration proposal is stored in `docs/proposed-fixes/2026-08-01-rls-boundary-hardening.patch`.
+The same policy set allows every authenticated user to delete photo rows and objects. The browser bundle also contains a reusable permanent-delete prompt value; because client code is public, that prompt cannot be an authorization boundary. The proposed RLS migration removes the broad delete policies and leaves the existing server-side admin-only policies in force.
+
+`tests/rls-boundaries.sql` is the read-only regression probe. It currently fails on foreign reads and the broad delete-policy catalog contract. The exact fail-closed migration proposal is stored in `docs/proposed-fixes/2026-08-01-rls-boundary-hardening.patch`.
 
 Risk requiring owner approval: removing the permissive delete policies leaves the already-existing admin-only delete rules in force. Removing the broad read policies also means that any future production role must be explicitly represented in `can_read_measurement`; current data contains only `zamer` profiles. The role matrix must be approved before applying this migration.
 

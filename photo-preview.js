@@ -1,21 +1,8 @@
 (() => {
   const BUCKET = "measurement-photos";
-  let clientPromise = null;
 
   async function getSupabaseClient() {
-    if (clientPromise) return clientPromise;
-
-    clientPromise = fetch("./app.js", { cache: "no-store" })
-      .then((response) => response.text())
-      .then((source) => {
-        const url = source.match(/const\s+SUPABASE_URL\s*=\s*"([^"]+)"/i)?.[1];
-        const key = source.match(/const\s+SUPABASE_ANON_KEY\s*=\s*"([^"]+)"/i)?.[1];
-        if (!url || !key || !window.supabase) return null;
-        return window.supabase.createClient(url, key);
-      })
-      .catch(() => null);
-
-    return clientPromise;
+    return window.TeksturaSupabaseClient || null;
   }
 
   function extractFilePath(card) {

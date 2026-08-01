@@ -1,0 +1,37 @@
+diff --git a/app.js b/app.js
+--- a/app.js
++++ b/app.js
+@@ -19,4 +19,5 @@
+ const supabaseClient = window.supabase?.createClient ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
++window.TeksturaSupabaseClient = supabaseClient;
+ const syncState = window.TeksturaSyncState;
+ const deletionSafety = window.TeksturaDeletionSafety;
+ const offlineSyncCoordinator = syncState?.createMeasurementCoordinator();
+diff --git a/photo-preview.js b/photo-preview.js
+--- a/photo-preview.js
++++ b/photo-preview.js
+@@ -1,21 +1,8 @@
+ (() => {
+   const BUCKET = "measurement-photos";
+-  let clientPromise = null;
+-
++
+   async function getSupabaseClient() {
+-    if (clientPromise) return clientPromise;
+-
+-    clientPromise = fetch("./app.js", { cache: "no-store" })
+-      .then((response) => response.text())
+-      .then((source) => {
+-        const url = source.match(/const\s+SUPABASE_URL\s*=\s*"([^"]+)"/i)?.[1];
+-        const key = source.match(/const\s+SUPABASE_ANON_KEY\s*=\s*"([^"]+)"/i)?.[1];
+-        if (!url || !key || !window.supabase) return null;
+-        return window.supabase.createClient(url, key);
+-      })
+-      .catch(() => null);
+-
+-    return clientPromise;
++    return window.TeksturaSupabaseClient || null;
+   }
+-
++
+   function extractFilePath(card) {

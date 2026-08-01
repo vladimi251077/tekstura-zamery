@@ -1,0 +1,44 @@
+diff --git a/offline-fallback.html b/offline-fallback.html
+new file mode 100644
+--- /dev/null
++++ b/offline-fallback.html
+@@ -0,0 +1,39 @@
++<!doctype html>
++<html lang="ru">
++  <head>
++    <meta charset="utf-8" />
++    <meta name="viewport" content="width=device-width, initial-scale=1" />
++    <meta name="theme-color" content="#f6f1e8" />
++    <title>Tekstura Zamery — офлайн</title>
++    <style>
++      :root { color-scheme: light; font-family: system-ui, sans-serif; }
++      body {
++        min-height: 100vh;
++        margin: 0;
++        display: grid;
++        place-items: center;
++        background: #f6f1e8;
++        color: #26231f;
++      }
++      main {
++        width: min(34rem, calc(100% - 2rem));
++        padding: 2rem;
++        border: 1px solid #d8cfc2;
++        border-radius: 1rem;
++        background: #fffdf9;
++        box-sizing: border-box;
++      }
++      h1 { margin-top: 0; font-size: 1.5rem; }
++      p { line-height: 1.5; }
++      a { color: inherit; font-weight: 700; }
++    </style>
++  </head>
++  <body>
++    <main>
++      <h1>Нет подключения к интернету</h1>
++      <p>Если приложение уже открывалось на этом устройстве, вернитесь на главный экран: локальный TEMP-черновик и фото останутся в памяти телефона.</p>
++      <p>Не очищайте данные сайта до успешной синхронизации или экспорта резервной копии.</p>
++      <p><a href="/">Вернуться в приложение</a></p>
++    </main>
++  </body>
++</html>

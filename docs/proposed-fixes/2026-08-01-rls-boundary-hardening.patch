@@ -1,0 +1,62 @@
+diff --git a/supabase/migrations/20260801000000_harden_zamery_rls_boundaries.sql b/supabase/migrations/20260801000000_harden_zamery_rls_boundaries.sql
+new file mode 100644
+--- /dev/null
++++ b/supabase/migrations/20260801000000_harden_zamery_rls_boundaries.sql
+@@ -0,0 +1,51 @@
++begin;
++
++drop policy if exists clients_select_all_authenticated on public.clients;
++drop policy if exists measurements_select_all_authenticated on public.measurements;
++drop policy if exists measurement_photos_select_all_authenticated on public.measurement_photos;
++drop policy if exists authenticated_delete_measurement_photos on public.measurement_photos;
++drop policy if exists measurement_photos_bucket_select_all_authenticated on storage.objects;
++drop policy if exists authenticated_delete_measurement_photo_objects on storage.objects;
++
++create or replace function public.can_read_measurement_photo_object(object_name text)
++returns boolean
++language sql
++stable
++security definer
++set search_path = public, pg_temp
++as $function$
++  select exists (
++    select 1
++    from public.measurement_photos photo
++    join public.measurements measurement
++      on measurement.id = photo.measurement_id
++    where photo.file_path = object_name
++      and public.can_read_measurement(measurement)
++  );
++$function$;
++
++revoke all on function public.can_read_measurement_photo_object(text) from public;
++grant execute on function public.can_read_measurement_photo_object(text) to authenticated;
++
++drop policy if exists storage_measurement_photos_read on storage.objects;
++create policy storage_measurement_photos_read
++on storage.objects
++for select
++to authenticated
++using (
++  bucket_id = 'measurement-photos'
++  and public.can_read_measurement_photo_object(name)
++);
++
++do $verification$
++begin
++  if exists (
++    select 1
++    from pg_policies
++    where (schemaname, tablename, policyname) in (
++      ('public', 'clients', 'clients_select_all_authenticated'),
++      ('public', 'measurements', 'measurements_select_all_authenticated'),
++      ('public', 'measurement_photos', 'measurement_photos_select_all_authenticated'),
++      ('storage', 'objects', 'measurement_photos_bucket_select_all_authenticated')
++    )
++  ) then
++    raise exception 'permissive authenticated read policy remains';
++  end if;
++end
++$verification$;
++
++commit;

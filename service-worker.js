@@ -1,4 +1,4 @@
-const CACHE_VERSION = "tekstura-offline-shell-v39";
+const CACHE_VERSION = "tekstura-offline-shell-v40";
 const APP_SHELL_CACHE = `${CACHE_VERSION}-app-shell`;
 const OFFLINE_FALLBACK_URLS = [
   "/offline-fallback.html",
@@ -104,6 +104,9 @@ const REQUIRED_APP_SHELL_URLS = new Set([
 
 const LOCAL_CACHEABLE_DESTINATIONS = new Set(["document", "script", "style", "manifest", "image"]);
 const CACHE_FIRST_DESTINATIONS = new Set(["manifest", "image"]);
+const LOCAL_API_PATH_PREFIXES = ["/api", "/auth/v1", "/rest/v1", "/storage/v1", "/functions/v1", "/realtime/v1"];
+const EXCLUDED_NAVIGATION_PATH_PREFIXES = ["/admin"];
+const STATIC_ASSET_PATH = /\.(?:css|js|mjs|json|map|webmanifest|png|jpe?g|gif|svg|webp|ico|woff2?|ttf|txt|xml|pdf)$/i;
 
 function isSupabaseRequest(url) {
   return url.hostname.endsWith(".supabase.co") || url.hostname.includes("supabase");
@@ -115,6 +118,16 @@ function isLocalRequest(url) {
 
 function isExcludedLocalPath(url) {
   return url.pathname.endsWith("/production.html") || url.pathname.endsWith("/production.js") || url.pathname.endsWith("/production.css") || url.pathname.includes("/svg-constructor/");
+}
+
+function pathMatchesPrefix(pathname, prefix) {
+  return pathname === prefix || pathname.startsWith(`${prefix}/`);
+}
+
+function isExcludedNavigationPath(url) {
+  return LOCAL_API_PATH_PREFIXES.some((prefix) => pathMatchesPrefix(url.pathname, prefix)) ||
+    EXCLUDED_NAVIGATION_PATH_PREFIXES.some((prefix) => pathMatchesPrefix(url.pathname, prefix)) ||
+    STATIC_ASSET_PATH.test(url.pathname);
 }
 
 function isNavigationRequest(request) {
@@ -175,8 +188,11 @@ async function handleNavigationRequest(event) {
   const cache = await caches.open(APP_SHELL_CACHE);
   try {
     const response = await fetch(request);
-    if (response.ok) await cache.put(request, response.clone());
-    return response;
+    if (response.ok) {
+      await cache.put(request, response.clone());
+      return response;
+    }
+    return await cachedNavigationFallback(cache, request) || response;
   } catch (error) {
     return await cachedNavigationFallback(cache, request) || offlineFallbackResponse();
   }
@@ -268,16 +284,21 @@ self.addEventListener("message", (event) => {
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   const url = new URL(request.url);
+  const navigationRequest = isNavigationRequest(request);
 
   if (request.method !== "GET" || isSupabaseRequest(url) || !isLocalRequest(url) || isExcludedLocalPath(url)) {
     return;
   }
 
-  if (!LOCAL_CACHEABLE_DESTINATIONS.has(request.destination) && !isNavigationRequest(request)) {
+  if (navigationRequest && isExcludedNavigationPath(url)) {
     return;
   }
 
-  if (isNavigationRequest(request)) {
+  if (!LOCAL_CACHEABLE_DESTINATIONS.has(request.destination) && !navigationRequest) {
+    return;
+  }
+
+  if (navigationRequest) {
     event.respondWith(handleNavigationRequest(event));
     return;
   }

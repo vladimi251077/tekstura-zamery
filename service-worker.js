@@ -1,4 +1,4 @@
-const CACHE_VERSION = "tekstura-offline-shell-v38";
+const CACHE_VERSION = "tekstura-offline-shell-v39";
 const APP_SHELL_CACHE = `${CACHE_VERSION}-app-shell`;
 const OFFLINE_FALLBACK_URLS = [
   "/offline-fallback.html",
@@ -56,8 +56,8 @@ const APP_SHELL_URLS = [
   "./sync-state.js?v=20260726-phase-a",
   "/deletion-safety.js?v=20260727-safe-delete",
   "./deletion-safety.js?v=20260727-safe-delete",
-  "/app.js?v=20260727-safe-delete",
-  "./app.js?v=20260727-safe-delete",
+  "/app.js?v=20260802-supabase-cutover",
+  "./app.js?v=20260802-supabase-cutover",
   "/offline-db.js?v=20260727-safe-delete",
   "./offline-db.js?v=20260727-safe-delete",
   "/vendor/supabase-js.js",
@@ -88,8 +88,8 @@ const REQUIRED_APP_SHELL_URLS = new Set([
   "./sync-state.js?v=20260726-phase-a",
   "/deletion-safety.js?v=20260727-safe-delete",
   "./deletion-safety.js?v=20260727-safe-delete",
-  "/app.js?v=20260727-safe-delete",
-  "./app.js?v=20260727-safe-delete",
+  "/app.js?v=20260802-supabase-cutover",
+  "./app.js?v=20260802-supabase-cutover",
   "/offline-db.js?v=20260727-safe-delete",
   "./offline-db.js?v=20260727-safe-delete",
   "/vendor/supabase-js.js",

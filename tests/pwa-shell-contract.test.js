@@ -43,11 +43,14 @@ test("every required service-worker app-shell URL exists in the release source",
 test("service worker and diagnostics agree on the upgraded cache version", () => {
   const serviceWorkerSource = read("service-worker.js");
   const appSource = read("app.js");
+  const diagnosticsSource = read("offline-diagnostics.html");
   const serviceWorkerVersion = serviceWorkerSource.match(/const CACHE_VERSION = "([^"]+)"/)?.[1];
-  const diagnosticsCache = appSource.match(/const OFFLINE_SHELL_CACHE_NAME = "([^"]+)"/)?.[1];
+  const appCache = appSource.match(/const OFFLINE_SHELL_CACHE_NAME = "([^"]+)"/)?.[1];
+  const diagnosticsCache = diagnosticsSource.match(/var EXPECTED_CACHE = "([^"]+)"/)?.[1];
 
   assert.equal(serviceWorkerVersion, "tekstura-offline-shell-v40");
-  assert.equal(diagnosticsCache, `${serviceWorkerVersion}-app-shell`);
+  assert.equal(appCache, `${serviceWorkerVersion}-app-shell`);
+  assert.equal(diagnosticsCache, appCache);
 });
 
 test("offline fallback is fetched from source and cache cleanup cannot touch IndexedDB", () => {

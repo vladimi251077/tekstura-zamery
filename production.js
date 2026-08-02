@@ -1,5 +1,5 @@
-const SUPABASE_URL = "https://rhnlykqqhwweaywjopvm.supabase.co";
-const PRODUCTION_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJobmx5a3FxaHd3ZWF5d2pvcHZtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYxODE0NjksImV4cCI6MjA5MTc1NzQ2OX0.a0K1q7VKDBRW_7A6fbf5jyMOqO0KpRXQdn8XMBeXfwg";
+const SUPABASE_URL = "https://supabase-zamery.tekstura.shop";
+const PRODUCTION_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdWQiOiJhdXRoZW50aWNhdGVkIiwiZXhwIjoyMTAwNjMxMTA3LCJpYXQiOjE3ODUyNzExMDcsImlzcyI6InN1cGFiYXNlIiwicm9sZSI6ImFub24ifQ.WYGs1OTTFUg7s-AQTvlOAgmNjIXTy9RmTrkuED5msDM";
 
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, PRODUCTION_SUPABASE_ANON_KEY);
 const $ = (selector) => document.querySelector(selector);

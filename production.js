@@ -145,6 +145,17 @@ async function loadMeasurements() {
   renderList();
 }
 
+function formatMeasurementDate(value) {
+  if (!value) return "Не указана";
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "Не указана";
+  return new Intl.DateTimeFormat("ru-RU", {
+    timeZone: "Europe/Moscow",
+    day: "2-digit", month: "2-digit", year: "numeric",
+    hour: "2-digit", minute: "2-digit",
+  }).format(date);
+}
+
 function renderList() {
   const search = $("#prod-search").value.trim().toLowerCase();
   const list = $("#prod-list");
@@ -165,6 +176,7 @@ function renderList() {
       <span>${escapeHtml(c.name || "Без имени")}</span>
       <span>${escapeHtml(c.address || "Адрес не указан")}</span>
       <span>${escapeHtml(m.status || "")}</span>
+      <span title="Дата создания замера, московское время">Дата замера: ${escapeHtml(formatMeasurementDate(m.created_at))} (МСК)</span>
     </button>`;
   }).join("");
 }
@@ -727,6 +739,7 @@ function renderCard() {
     <header class="production-card-head">
       <div>
         <h2>${escapeHtml(m.number || "Задание")}</h2>
+        <p><b>Дата замера (МСК):</b> ${escapeHtml(formatMeasurementDate(m.created_at))}</p>
         <p><b>Клиент:</b> ${escapeHtml(c.name || "Без имени")}</p>
         <p><b>Адрес:</b> ${escapeHtml(c.address || "Адрес не указан")}</p>
         <p><b>Телефон:</b> ${escapeHtml(c.phone || "—")}</p>

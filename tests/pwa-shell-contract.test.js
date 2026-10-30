@@ -48,7 +48,7 @@ test("service worker and diagnostics agree on the upgraded cache version", () =>
   const appCache = appSource.match(/const OFFLINE_SHELL_CACHE_NAME = "([^"]+)"/)?.[1];
   const diagnosticsCache = diagnosticsSource.match(/var EXPECTED_CACHE = "([^"]+)"/)?.[1];
 
-  assert.equal(serviceWorkerVersion, "tekstura-offline-shell-v40");
+  assert.equal(serviceWorkerVersion, "tekstura-offline-shell-v41");
   assert.equal(appCache, `${serviceWorkerVersion}-app-shell`);
   assert.equal(diagnosticsCache, appCache);
 });

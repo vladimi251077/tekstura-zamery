@@ -11,8 +11,8 @@ const PHOTO_DRAFT_SAVE_REQUIRED_MESSAGE = "Фото не загружено: с�
 const PHOTO_UPLOAD_OFFLINE_MESSAGE = "Фото нельзя загрузить без интернета. В TEMP-черновике фото сохраняются в телефоне и отправятся при синхронизации.";
 const OFFLINE_SYNC_UNAVAILABLE_MESSAGE = "Появится интернет — можно будет синхронизировать.";
 const OFFLINE_SYNC_ERROR_MESSAGE = "Не удалось синхронизировать. Черновик сохранён в телефоне, попробуйте ещё раз.";
-const TEKSTURA_APP_JS_VERSION = "20260802-supabase-cutover";
-const OFFLINE_SHELL_CACHE_NAME = "tekstura-offline-shell-v40-app-shell";
+const TEKSTURA_APP_JS_VERSION = "20261030-measurement-date-v1";
+const OFFLINE_SHELL_CACHE_NAME = "tekstura-offline-shell-v41-app-shell";
 const SUPABASE_CONNECTING_MESSAGE = "Подключаюсь к Supabase...";
 const SUPABASE_REFRESHING_MESSAGE = "Обновляю данные...";
 const PERMANENT_DELETE_PASSWORD = "del2525";
@@ -2352,6 +2352,17 @@ function renderStats() {
   if ($("#stat-archive")) $("#stat-archive").textContent = archive;
 }
 
+function formatMeasurementDate(value) {
+  if (!value) return "Не указана";
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "Не указана";
+  return new Intl.DateTimeFormat("ru-RU", {
+    timeZone: "Europe/Moscow",
+    day: "2-digit", month: "2-digit", year: "numeric",
+    hour: "2-digit", minute: "2-digit",
+  }).format(date);
+}
+
 function renderList() {
   const list = $("#measurements-list");
   const items = filteredMeasurements();
@@ -2368,7 +2379,7 @@ function renderList() {
     const measurerChip = measurementMeasurerName(m) ? `<span class="small-chip">Замерщик: ${escapeHtml(measurementMeasurerName(m))}</span>` : "";
     const checked = state.selectedTrashIds.has(String(m.id)) ? "checked" : "";
     const checkbox = showTrashCheckboxes ? `<label class="trash-select" aria-label="Выбрать замер ${escapeHtml(m.number || m.id)}"><input type="checkbox" data-trash-select-id="${escapeHtml(m.id)}" ${checked} /><span>Выбрать</span></label>` : "";
-    return `<div class="measurement-item ${active}" role="button" tabindex="0" data-id="${escapeHtml(m.id)}">${checkbox}<div class="number">${escapeHtml(m.number)}</div><div>${escapeHtml(c.name || "Клиент не указан")}</div><div class="address">${escapeHtml(c.address || "Адрес не указан")}</div><div class="measurement-meta">${m.is_deleted ? `<span class="small-chip danger-chip">Корзина</span>` : ""}<span class="small-chip">${escapeHtml(m.status)}</span><span class="small-chip">${escapeHtml(m.site_situation)}</span><span class="small-chip">${escapeHtml(m.opening_type)}</span><span class="small-chip mode-chip">${escapeHtml(modeLabel)}</span>${measurerChip}</div></div>`;
+    return `<div class="measurement-item ${active}" role="button" tabindex="0" data-id="${escapeHtml(m.id)}">${checkbox}<div class="number">${escapeHtml(m.number)}</div><div>${escapeHtml(c.name || "Клиент не указан")}</div><div class="address">${escapeHtml(c.address || "Адрес не указан")}</div><div class="measurement-meta">${m.is_deleted ? `<span class="small-chip danger-chip">Корзина</span>` : ""}<span class="small-chip">${escapeHtml(m.status)}</span><span class="small-chip">${escapeHtml(m.site_situation)}</span><span class="small-chip">${escapeHtml(m.opening_type)}</span><span class="small-chip mode-chip">${escapeHtml(modeLabel)}</span>${measurerChip}<span class="small-chip" title="Дата создания замера, московское время">Дата замера: ${escapeHtml(formatMeasurementDate(m.created_at))} (МСК)</span></div></div>`;
   }).join("");
   $$(".measurement-item").forEach((item) => {
     item.addEventListener("click", (event) => {
@@ -2501,6 +2512,8 @@ function fillForm(m) {
   form.has_ventilation.checked = Boolean(m.has_ventilation);
   $("#form-title").textContent = isLocalOfflineDraft(m) ? `Офлайн-черновик ${m.number || "TEMP"}` : (m.number || "Новый замер");
   $("#form-status").textContent = isLocalOfflineDraft(m) ? "local_only" : (m.status || "Готовый замер");
+  const formDate = $("#form-date");
+  if (formDate) formDate.textContent = `Дата замера: ${formatMeasurementDate(m.created_at)} (МСК)`;
   const formMeasurer = $("#form-measurer");
   const measurerName = measurementMeasurerName(m);
   if (formMeasurer) {
@@ -3502,6 +3515,7 @@ function renderPreview() {
     <div class="preview-grid">
       <section class="preview-section">
         <h3>Клиент и объект</h3>
+        ${previewRow("Дата замера (МСК)", formatMeasurementDate(m.created_at))}
         ${previewRow("Клиент", c.name)}
         ${previewRow("Телефон", c.phone)}
         ${previewRow("Адрес", c.address)}

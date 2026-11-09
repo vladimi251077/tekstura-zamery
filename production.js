@@ -192,6 +192,8 @@ async function selectMeasurement(id) {
 }
 
 async function loadPhotos(measurement) {
+  // A late request for a different card must not clear the current gallery.
+  if (state.selected?.id !== measurement?.id) return;
   state.photos = [];
   if (!measurement?.id) return;
   const { data, error } = await supabaseClient

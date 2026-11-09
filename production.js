@@ -703,21 +703,35 @@ function renderPhotos() {
   }).join("")}</div>`;
 }
 
+function handleProductionPhotoImageError(img) {
+  if (!img || !img.isConnected) return;
+  // Retry a failed network request once; do not loop on permanently missing files.
+  if (img.dataset.retryAttempted !== "1" && navigator.onLine) {
+    img.dataset.retryAttempted = "1";
+    const attemptedUrl = img.src;
+    setTimeout(() => {
+      if (img.isConnected) img.src = attemptedUrl;
+    }, 700);
+    return;
+  }
+  if (img.dataset.fallback !== "1" && img.dataset.originalSrc && img.dataset.originalSrc !== img.src) {
+    img.dataset.fallback = "1";
+    img.src = img.dataset.originalSrc;
+    return;
+  }
+  const media = img.closest(".production-photo-media");
+  if (!media) return;
+  media.classList.add("is-error");
+  img.removeAttribute("src");
+  img.classList.add("hidden");
+  media.querySelector(".production-photo-fallback")?.classList.remove("hidden");
+}
+
 function bindProductionPhotoFallbacks() {
-  $$(".production-photo img").forEach((img) => {
-    img.onerror = () => {
-      if (img.dataset.fallback !== "1" && img.dataset.originalSrc && img.dataset.originalSrc !== img.src) {
-        img.dataset.fallback = "1";
-        img.src = img.dataset.originalSrc;
-        return;
-      }
-      const media = img.closest(".production-photo-media");
-      if (!media) return;
-      media.classList.add("is-error");
-      img.removeAttribute("src");
-      img.classList.add("hidden");
-      media.querySelector(".production-photo-fallback")?.classList.remove("hidden");
-    };
+  $(".production-photo img").forEach((img) => {
+    img.onerror = () => handleProductionPhotoImageError(img);
+    // Cached failed responses can finish before the handler is attached.
+    if (img.complete && img.naturalWidth === 0) handleProductionPhotoImageError(img);
   });
 }
 

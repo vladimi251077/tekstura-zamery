@@ -1766,11 +1766,32 @@ function renderPhotoFallback(message, filePath, hidden = false) {
   </div>`;
 }
 
+// A brief network interruption should not leave a permanent red error immediately.
+// Retry the same URL only once, then try the already-signed original once.
+function handlePhotoImageError(image) {
+  if (!image || !image.isConnected) return;
+  if (image.dataset.retryAttempted !== "1" && navigator.onLine) {
+    image.dataset.retryAttempted = "1";
+    const attemptedUrl = image.src;
+    setTimeout(() => {
+      if (image.isConnected) image.src = attemptedUrl;
+    }, 700);
+    return;
+  }
+  if (image.dataset.fallback !== "1" && image.dataset.originalSrc && image.dataset.originalSrc !== image.src) {
+    image.dataset.fallback = "1";
+    image.src = image.dataset.originalSrc;
+    return;
+  }
+  image.classList.add("hidden");
+  image.nextElementSibling?.classList.remove("hidden");
+}
+
 function renderPhotoImage(url, title, filePath, originalUrl = "") {
   const media = `<div class="photo-media" data-file-path="${escapeHtml(filePath)}">
     <img src="${escapeHtml(url)}" alt="${escapeHtml(title)}" loading="lazy" decoding="async"
       data-original-src="${escapeHtml(originalUrl)}"
-      onerror="if(this.dataset.fallback!=='1' && this.dataset.originalSrc && this.dataset.originalSrc!==this.src){this.dataset.fallback='1';this.src=this.dataset.originalSrc;return;}this.classList.add('hidden');var n=this.nextElementSibling;if(n)n.classList.remove('hidden');" />
+      onerror="handlePhotoImageError(this)" />
     ${renderPhotoFallback("Файл не открылся", filePath, true)}
   </div>`;
   return originalUrl

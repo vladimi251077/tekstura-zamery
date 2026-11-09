@@ -5,7 +5,7 @@ const supabaseClient = window.supabase.createClient(SUPABASE_URL, PRODUCTION_SUP
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
-const state = { user: null, profile: null, measurements: [], selected: null, photos: [], listOpen: true };
+const state = { user: null, profile: null, measurements: [], selected: null, photos: [], photosLoading: false, listOpen: true };
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -68,6 +68,7 @@ async function login() {
 
 async function logout() {
   await supabaseClient.auth.signOut();
+  productionThumbnailCache.clear();
   state.user = null;
   state.profile = null;
   state.measurements = [];
@@ -174,14 +175,25 @@ async function selectMeasurement(id) {
   if (!measurement) return;
   state.selected = measurement;
   state.listOpen = false;
+  state.photos = [];
+  state.photosLoading = true;
   syncProductionLayoutState();
   renderList();
-  await loadPhotos(measurement);
-  renderCard();
+  renderCard(); // Text and drawing appear before Storage requests finish.
   history.replaceState(null, "", `./production.html?id=${encodeURIComponent(id)}`);
+  try {
+    await loadPhotos(measurement);
+  } finally {
+    if (state.selected?.id === id) {
+      state.photosLoading = false;
+      renderCard();
+    }
+  }
 }
 
 async function loadPhotos(measurement) {
+  // A late request for a different card must not clear the current gallery.
+  if (state.selected?.id !== measurement?.id) return;
   state.photos = [];
   if (!measurement?.id) return;
   const { data, error } = await supabaseClient
@@ -193,8 +205,26 @@ async function loadPhotos(measurement) {
     console.warn("Не удалось загрузить фото", error);
     return;
   }
+  if (state.selected?.id !== measurement.id) return;
   const filtered = window.TeksturaPhotoPaths.filterPhotoRecordsForMeasurement(data || [], measurement);
-  state.photos = await Promise.all(filtered.map(async (photo) => ({ ...photo, url: await signedPhotoUrl(photo.file_path) })));
+  if (!filtered.length) {
+    state.photos = [];
+    return;
+  }
+  const paths = filtered.map((photo) => normalizePhotoStoragePath(photo.file_path));
+  const [previews, originalsResponse] = await Promise.all([
+    Promise.all(filtered.map((photo) => signedPhotoUrl(photo.file_path))),
+    supabaseClient.storage.from("measurement-photos")
+      .createSignedUrls(paths, PHOTO_SIGNED_URL_SECONDS)
+      .catch((error) => ({ data: null, error })),
+  ]);
+  if (state.selected?.id !== measurement.id) return;
+  if (originalsResponse.error) console.warn("Не удалось получить ссылки оригиналов", originalsResponse.error);
+  const originals = originalsResponse.data || [];
+  state.photos = filtered.map((photo, index) => {
+    const originalUrl = originals[index]?.signedUrl || "";
+    return { ...photo, url: previews[index] || originalUrl, originalUrl: originalUrl || previews[index] || "" };
+  });
 }
 
 function normalizePhotoStoragePath(path) {
@@ -202,18 +232,28 @@ function normalizePhotoStoragePath(path) {
   return normalized.startsWith("measurement-photos/") ? normalized.slice("measurement-photos/".length) : normalized;
 }
 
+const PHOTO_THUMBNAIL_TRANSFORM = { width: 480, quality: 70, resize: "contain" };
+const PHOTO_SIGNED_URL_SECONDS = 60 * 60;
+const productionThumbnailCache = new Map();
+
 async function signedPhotoUrl(path) {
   const filePath = normalizePhotoStoragePath(path);
   if (!filePath) return "";
+  const cached = productionThumbnailCache.get(filePath);
+  if (cached && cached.expiresAt > Date.now()) return cached.url;
   try {
-    const { data, error } = await supabaseClient.storage.from("measurement-photos").createSignedUrl(filePath, 60 * 60);
+    const { data, error } = await supabaseClient.storage.from("measurement-photos").createSignedUrl(
+      filePath, PHOTO_SIGNED_URL_SECONDS, { transform: PHOTO_THUMBNAIL_TRANSFORM }
+    );
     if (error) {
-      console.warn("Не удалось создать signed URL для фото", { filePath, error });
+      console.warn("Не удалось создать миниатюру фото", { filePath, error });
       return "";
     }
-    return data?.signedUrl || "";
+    const url = data?.signedUrl || "";
+    if (url) productionThumbnailCache.set(filePath, { url, expiresAt: Date.now() + 50 * 60 * 1000 });
+    return url;
   } catch (error) {
-    console.warn("Не удалось создать signed URL для фото", { filePath, error });
+    console.warn("Не удалось создать миниатюру фото", { filePath, error });
     return "";
   }
 }
@@ -644,13 +684,13 @@ function renderPhotoFallback(message, filePath, hidden = false) {
 }
 
 function renderPhotos() {
-  if (!state.photos.length) return `<p class="production-empty-line">Фото для этого замера не загружены.</p>`;
+  if (!state.photos.length) return `<p class="production-empty-line">${state.photosLoading ? "Загружаю фотографии..." : "Фото для этого замера не загружены."}</p>`;
   return `<div class="production-photo-grid">${state.photos.map((p) => {
     const filePath = p.file_path || "";
     const title = p.photo_type || "Фото";
     const media = p.url
       ? `<div class="production-photo-media" data-file-path="${escapeHtml(filePath)}">
-          <img src="${escapeHtml(p.url)}" alt="${escapeHtml(title)}">
+          <img src="${escapeHtml(p.url)}" data-original-src="${escapeHtml(p.originalUrl || "")}" alt="${escapeHtml(title)}" loading="lazy" decoding="async">
           ${renderPhotoFallback("Файл не открылся", filePath, true)}
         </div>`
       : `<div class="production-photo-media is-error" data-file-path="${escapeHtml(filePath)}">
@@ -658,21 +698,40 @@ function renderPhotos() {
         </div>`;
     const caption = `<div class="production-photo-caption"><b>${escapeHtml(title)}</b><br><small>${escapeHtml(filePath)}</small></div>`;
     return p.url
-      ? `<a class="production-photo" href="${escapeHtml(p.url)}" target="_blank" rel="noopener">${media}${caption}</a>`
+      ? `<a class="production-photo" href="${escapeHtml(p.originalUrl || p.url)}" target="_blank" rel="noopener">${media}${caption}</a>`
       : `<div class="production-photo">${media}${caption}</div>`;
   }).join("")}</div>`;
 }
 
+function handleProductionPhotoImageError(img) {
+  if (!img || !img.isConnected) return;
+  // Retry a failed network request once; do not loop on permanently missing files.
+  if (img.dataset.retryAttempted !== "1" && navigator.onLine) {
+    img.dataset.retryAttempted = "1";
+    const attemptedUrl = img.src;
+    setTimeout(() => {
+      if (img.isConnected) img.src = attemptedUrl;
+    }, 700);
+    return;
+  }
+  if (img.dataset.fallback !== "1" && img.dataset.originalSrc && img.dataset.originalSrc !== img.src) {
+    img.dataset.fallback = "1";
+    img.src = img.dataset.originalSrc;
+    return;
+  }
+  const media = img.closest(".production-photo-media");
+  if (!media) return;
+  media.classList.add("is-error");
+  img.removeAttribute("src");
+  img.classList.add("hidden");
+  media.querySelector(".production-photo-fallback")?.classList.remove("hidden");
+}
+
 function bindProductionPhotoFallbacks() {
-  $$(".production-photo img").forEach((img) => {
-    img.onerror = () => {
-      const media = img.closest(".production-photo-media");
-      if (!media) return;
-      media.classList.add("is-error");
-      img.removeAttribute("src");
-      img.classList.add("hidden");
-      media.querySelector(".production-photo-fallback")?.classList.remove("hidden");
-    };
+  $(".production-photo img").forEach((img) => {
+    img.onerror = () => handleProductionPhotoImageError(img);
+    // Cached failed responses can finish before the handler is attached.
+    if (img.complete && img.naturalWidth === 0) handleProductionPhotoImageError(img);
   });
 }
 

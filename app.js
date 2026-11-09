@@ -11,8 +11,8 @@ const PHOTO_DRAFT_SAVE_REQUIRED_MESSAGE = "Фото не загружено: с�
 const PHOTO_UPLOAD_OFFLINE_MESSAGE = "Фото нельзя загрузить без интернета. В TEMP-черновике фото сохраняются в телефоне и отправятся при синхронизации.";
 const OFFLINE_SYNC_UNAVAILABLE_MESSAGE = "Появится интернет — можно будет синхронизировать.";
 const OFFLINE_SYNC_ERROR_MESSAGE = "Не удалось синхронизировать. Черновик сохранён в телефоне, попробуйте ещё раз.";
-const TEKSTURA_APP_JS_VERSION = "20260802-supabase-cutover";
-const OFFLINE_SHELL_CACHE_NAME = "tekstura-offline-shell-v40-app-shell";
+const TEKSTURA_APP_JS_VERSION = "20261109-photo-thumbnails";
+const OFFLINE_SHELL_CACHE_NAME = "tekstura-offline-shell-v41-app-shell";
 const SUPABASE_CONNECTING_MESSAGE = "Подключаюсь к Supabase...";
 const SUPABASE_REFRESHING_MESSAGE = "Обновляю данные...";
 const PERMANENT_DELETE_PASSWORD = "del2525";
@@ -1734,18 +1734,28 @@ function normalizePhotoStoragePath(path) {
   return normalized.startsWith("measurement-photos/") ? normalized.slice("measurement-photos/".length) : normalized;
 }
 
+const PHOTO_THUMBNAIL_TRANSFORM = { width: 480, quality: 70, resize: "contain" };
+const PHOTO_SIGNED_URL_SECONDS = 60 * 60;
+const photoThumbnailCache = new Map();
+
 async function signedPhotoUrl(path) {
   const filePath = normalizePhotoStoragePath(path);
   if (!filePath || !supabaseClient) return "";
+  const cached = photoThumbnailCache.get(filePath);
+  if (cached && cached.expiresAt > Date.now()) return cached.url;
   try {
-    const { data, error } = await supabaseClient.storage.from("measurement-photos").createSignedUrl(filePath, 60 * 60);
+    const { data, error } = await supabaseClient.storage.from("measurement-photos").createSignedUrl(
+      filePath, PHOTO_SIGNED_URL_SECONDS, { transform: PHOTO_THUMBNAIL_TRANSFORM }
+    );
     if (error) {
-      console.warn("Не удалось создать signed URL для фото", { filePath, error });
+      console.warn("Не удалось создать миниатюру фото", { filePath, error });
       return "";
     }
-    return data?.signedUrl || "";
+    const url = data?.signedUrl || "";
+    if (url) photoThumbnailCache.set(filePath, { url, expiresAt: Date.now() + 50 * 60 * 1000 });
+    return url;
   } catch (error) {
-    console.warn("Не удалось создать signed URL для фото", { filePath, error });
+    console.warn("Не удалось создать миниатюру фото", { filePath, error });
     return "";
   }
 }
@@ -1756,11 +1766,37 @@ function renderPhotoFallback(message, filePath, hidden = false) {
   </div>`;
 }
 
-function renderPhotoImage(url, title, filePath) {
-  return `<div class="photo-media" data-file-path="${escapeHtml(filePath)}">
-    <img src="${escapeHtml(url)}" alt="${escapeHtml(title)}" loading="lazy" onerror="this.classList.add('hidden');var n=this.nextElementSibling;if(n)n.classList.remove('hidden');" />
+// A brief network interruption should not leave a permanent red error immediately.
+// Retry the same URL only once, then try the already-signed original once.
+function handlePhotoImageError(image) {
+  if (!image || !image.isConnected) return;
+  if (image.dataset.retryAttempted !== "1" && navigator.onLine) {
+    image.dataset.retryAttempted = "1";
+    const attemptedUrl = image.src;
+    setTimeout(() => {
+      if (image.isConnected) image.src = attemptedUrl;
+    }, 700);
+    return;
+  }
+  if (image.dataset.fallback !== "1" && image.dataset.originalSrc && image.dataset.originalSrc !== image.src) {
+    image.dataset.fallback = "1";
+    image.src = image.dataset.originalSrc;
+    return;
+  }
+  image.classList.add("hidden");
+  image.nextElementSibling?.classList.remove("hidden");
+}
+
+function renderPhotoImage(url, title, filePath, originalUrl = "") {
+  const media = `<div class="photo-media" data-file-path="${escapeHtml(filePath)}">
+    <img src="${escapeHtml(url)}" alt="${escapeHtml(title)}" loading="lazy" decoding="async"
+      data-original-src="${escapeHtml(originalUrl)}"
+      onerror="handlePhotoImageError(this)" />
     ${renderPhotoFallback("Файл не открылся", filePath, true)}
   </div>`;
+  return originalUrl
+    ? `<a href="${escapeHtml(originalUrl)}" target="_blank" rel="noopener" aria-label="Открыть оригинал фотографии">${media}</a>`
+    : media;
 }
 
 function filterPhotosForMeasurement(photos, measurement) {
@@ -2133,6 +2169,7 @@ async function logout() {
   if (!confirmLeaveProtectedData("выйти из приложения", true)) return;
   if (supabaseClient) await supabaseClient.auth.signOut();
   clearRememberedAuth();
+  photoThumbnailCache.clear();
   state.user = null;
   state.profile = null;
   state.measurements = [];
@@ -2465,16 +2502,20 @@ async function selectMeasurement(id, options = {}) {
   state.hiddenForeignPhotos = 0;
   renderPhotos();
   const selectedId = state.selected.id;
+  // Show measurements immediately, without waiting for thumbnail signing.
+  if (options.mode === "edit") {
+    editSelectedMeasurement();
+  } else {
+    renderPreview();
+    showWorkspacePanel("preview");
+    closeMeasurementsScreen();
+  }
   await loadPhotos(selectedId);
   if (state.selected?.id !== selectedId) return;
   renderList();
-  if (options.mode === "edit") {
-    editSelectedMeasurement();
-    return;
-  }
-  renderPreview();
-  showWorkspacePanel("preview");
-  closeMeasurementsScreen();
+  renderPhotos();
+  renderChecks();
+  if (options.mode !== "edit") renderPreview();
 }
 
 function editSelectedMeasurement() {
@@ -3197,10 +3238,25 @@ async function loadPhotos(measurementId) {
   if (persistedMeasurementId() !== measurementId) return;
   state.photoScopeId = measurementId;
   const filtered = filterPhotosForMeasurement(data || [], state.selected);
-  state.photos = await Promise.all(filtered.map(async (photo) => ({
-    ...photo,
-    url: await signedPhotoUrl(photo.file_path),
-  })));
+  if (!filtered.length) {
+    state.photos = [];
+    return;
+  }
+  const paths = filtered.map((photo) => normalizePhotoStoragePath(photo.file_path));
+  // createSignedUrls batches original links; only single-file signing supports image transforms.
+  const [previews, originalsResponse] = await Promise.all([
+    Promise.all(filtered.map((photo) => signedPhotoUrl(photo.file_path))),
+    supabaseClient.storage.from("measurement-photos")
+      .createSignedUrls(paths, PHOTO_SIGNED_URL_SECONDS)
+      .catch((error) => ({ data: null, error })),
+  ]);
+  if (persistedMeasurementId() !== measurementId) return;
+  if (originalsResponse.error) console.warn("Не удалось получить ссылки оригиналов", originalsResponse.error);
+  const originals = originalsResponse.data || [];
+  state.photos = filtered.map((photo, index) => {
+    const originalUrl = originals[index]?.signedUrl || "";
+    return { ...photo, url: previews[index] || originalUrl, originalUrl: originalUrl || previews[index] || "" };
+  });
 }
 
 function previewValue(value, fallback = "—") {
@@ -3368,7 +3424,7 @@ function previewPhotoMarkup() {
     const previewUrl = photoPreviewUrl(photo);
     const filePath = photo.file_path || photo.server_file_path || "";
     const media = previewUrl
-      ? renderPhotoImage(previewUrl, type, filePath)
+      ? renderPhotoImage(previewUrl, type, filePath, photo.originalUrl || "")
       : photo.local_photo_id
         ? `<div class="preview-photo-thumb">Фото</div>`
         : `<div class="preview-photo-media is-error">${renderPhotoFallback("Фото есть в базе, но файл недоступен в Storage", filePath)}</div>`;
@@ -3789,7 +3845,7 @@ function renderPhotos() {
     const filePath = p.file_path || "";
     const titleText = p.photo_type || "Фото";
     const media = p.url
-      ? renderPhotoImage(p.url, titleText, filePath)
+      ? renderPhotoImage(p.url, titleText, filePath, p.originalUrl || "")
       : `<div class="photo-media is-error">${renderPhotoFallback("Фото есть в базе, но файл недоступен в Storage", filePath)}</div>`;
     return `
     <div class="photo-card" data-photo-id="${escapeHtml(p.id)}" data-measurement-id="${escapeHtml(p.measurement_id)}">
